@@ -26,6 +26,9 @@ ENV/
 env/
 .venv/
 
+# Claude Code context
+CLAUDE.md
+
 # IDE
 .idea/
 .vscode/
