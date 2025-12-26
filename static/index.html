@@ -322,23 +322,44 @@
                     <section class="card checkin-result-card" id="checkinResultCard" style="display:none;">
                         <div class="checkin-status-banner" id="checkinStatusBanner"></div>
                         <div class="checkin-summary" id="checkinSummary"></div>
-                        <div class="checkin-tools-grid">
-                            <div class="checkin-tool-section missing" id="checkinMissing" style="display:none;">
-                                <h4>Missing</h4>
-                                <div class="checkin-tool-list" id="checkinMissingList"></div>
-                            </div>
-                            <div class="checkin-tool-section uncertain" id="checkinUncertain" style="display:none;">
-                                <h4>Uncertain</h4>
-                                <div class="checkin-tool-list" id="checkinUncertainList"></div>
-                            </div>
-                            <div class="checkin-tool-section present" id="checkinPresent" style="display:none;">
-                                <h4>Present</h4>
-                                <div class="checkin-tool-list" id="checkinPresentList"></div>
-                            </div>
-                        </div>
                         <div class="checkin-image-result">
                             <img id="checkinResultImage" class="result-image">
                         </div>
+
+                        <!-- Accordion Details -->
+                        <div class="accordion" id="checkinAccordion">
+                            <div class="accordion-item" id="accordionMissing" style="display:none;">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <span>Missing Tools</span>
+                                    <span class="accordion-count" id="missingCount">0</span>
+                                    <span class="accordion-icon">▼</span>
+                                </button>
+                                <div class="accordion-content">
+                                    <div class="accordion-tools" id="checkinMissingList"></div>
+                                </div>
+                            </div>
+                            <div class="accordion-item" id="accordionUncertain" style="display:none;">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <span>Uncertain Tools</span>
+                                    <span class="accordion-count" id="uncertainCount">0</span>
+                                    <span class="accordion-icon">▼</span>
+                                </button>
+                                <div class="accordion-content">
+                                    <div class="accordion-tools" id="checkinUncertainList"></div>
+                                </div>
+                            </div>
+                            <div class="accordion-item" id="accordionPresent" style="display:none;">
+                                <button class="accordion-header" onclick="toggleAccordion(this)">
+                                    <span>Present Tools</span>
+                                    <span class="accordion-count" id="presentCount">0</span>
+                                    <span class="accordion-icon">▼</span>
+                                </button>
+                                <div class="accordion-content">
+                                    <div class="accordion-tools" id="checkinPresentList"></div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="checkin-actions">
                             <button class="btn btn-primary btn-large" onclick="showPage('dashboard')">Done - Back to Dashboard</button>
                         </div>

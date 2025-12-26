@@ -172,7 +172,7 @@ class ResultVisualizer:
         show_labels: bool = True,
         show_confidence: bool = True,
         show_icons: bool = True,
-        show_debug: bool = True,
+        show_debug: bool = False,
     ) -> np.ndarray:
         """Annotate an image with analysis results.
 

@@ -919,29 +919,66 @@ function displayCheckinResult(result) {
         <div class="stat uncertain"><div class="num">${result.summary.uncertain}</div><div>Uncertain</div></div>
     `;
 
-    // Tool lists
-    const missing = result.tools.filter(t => t.status === 'missing');
-    const uncertain = result.tools.filter(t => t.status === 'uncertain');
-    const present = result.tools.filter(t => t.status === 'present');
-
-    const missingSection = document.getElementById('checkinMissing');
-    const uncertainSection = document.getElementById('checkinUncertain');
-    const presentSection = document.getElementById('checkinPresent');
-
-    missingSection.style.display = missing.length ? 'block' : 'none';
-    uncertainSection.style.display = uncertain.length ? 'block' : 'none';
-    presentSection.style.display = present.length ? 'block' : 'none';
-
-    document.getElementById('checkinMissingList').innerHTML = missing.map(t => formatToolWithDebug(t)).join('');
-    document.getElementById('checkinUncertainList').innerHTML = uncertain.map(t => formatToolWithDebug(t)).join('');
-    document.getElementById('checkinPresentList').innerHTML = present.map(t => formatToolWithDebug(t)).join('');
-
     // Image
     if (result.image_annotated) {
         document.getElementById('checkinResultImage').src = result.image_annotated;
     }
 
+    // Tool lists in accordion
+    const missing = result.tools.filter(t => t.status === 'missing');
+    const uncertain = result.tools.filter(t => t.status === 'uncertain');
+    const present = result.tools.filter(t => t.status === 'present');
+
+    // Missing accordion
+    const accordionMissing = document.getElementById('accordionMissing');
+    accordionMissing.style.display = missing.length ? 'block' : 'none';
+    accordionMissing.className = 'accordion-item missing' + (missing.length ? ' open' : '');
+    document.getElementById('missingCount').textContent = missing.length;
+    document.getElementById('checkinMissingList').innerHTML = missing.map(t => formatToolDetailRow(t)).join('');
+
+    // Uncertain accordion
+    const accordionUncertain = document.getElementById('accordionUncertain');
+    accordionUncertain.style.display = uncertain.length ? 'block' : 'none';
+    accordionUncertain.className = 'accordion-item uncertain' + (uncertain.length ? ' open' : '');
+    document.getElementById('uncertainCount').textContent = uncertain.length;
+    document.getElementById('checkinUncertainList').innerHTML = uncertain.map(t => formatToolDetailRow(t)).join('');
+
+    // Present accordion
+    const accordionPresent = document.getElementById('accordionPresent');
+    accordionPresent.style.display = present.length ? 'block' : 'none';
+    accordionPresent.className = 'accordion-item present';  // Not open by default
+    document.getElementById('presentCount').textContent = present.length;
+    document.getElementById('checkinPresentList').innerHTML = present.map(t => formatToolDetailRow(t)).join('');
+
     document.getElementById('checkinResultCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+function toggleAccordion(button) {
+    const item = button.closest('.accordion-item');
+    item.classList.toggle('open');
+}
+
+function formatToolDetailRow(tool) {
+    let metricsHtml = '';
+    if (tool.debug_info) {
+        const d = tool.debug_info;
+        metricsHtml = `
+            <div class="tool-detail-metrics">
+                <span title="Brightness ratio">B: ${(d.brightness_ratio * 100).toFixed(1)}%</span>
+                <span title="Saturation ratio">S: ${(d.saturation_ratio * 100).toFixed(1)}%</span>
+                <span title="Edge density">E: ${(d.edge_density * 100).toFixed(1)}%</span>
+                <span title="Mean brightness">μB: ${d.mean_brightness.toFixed(0)}</span>
+            </div>`;
+    }
+
+    return `
+        <div class="tool-detail-row">
+            <div>
+                <div class="tool-detail-name">${tool.name}</div>
+                ${metricsHtml}
+            </div>
+            <div class="tool-detail-confidence">${Math.round(tool.confidence * 100)}%</div>
+        </div>`;
 }
 
 // ==================== UTILITIES ====================
@@ -967,24 +1004,6 @@ function formatStatus(status) {
 function formatDate(dateStr) {
     const d = new Date(dateStr);
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatToolWithDebug(tool) {
-    let html = `<div class="tool-debug">
-        <div class="tool-name">${tool.name} <small>(${Math.round(tool.confidence * 100)}%)</small></div>`;
-
-    if (tool.debug_info) {
-        const d = tool.debug_info;
-        html += `<div class="debug-metrics">
-            <span title="Brightness ratio">B: ${(d.brightness_ratio * 100).toFixed(1)}%</span>
-            <span title="Saturation ratio">S: ${(d.saturation_ratio * 100).toFixed(1)}%</span>
-            <span title="Edge density">E: ${(d.edge_density * 100).toFixed(1)}%</span>
-            <span title="Mean brightness">μB: ${d.mean_brightness.toFixed(0)}</span>
-        </div>`;
-    }
-
-    html += '</div>';
-    return html;
 }
 
 // ==================== TOAST NOTIFICATIONS ====================
