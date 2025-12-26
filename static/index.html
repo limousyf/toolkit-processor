@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toolkit Processor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h1>Toolkit<br>Processor</h1>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#" class="nav-link active" data-page="dashboard">Dashboard</a></li>
+                <li><a href="#" class="nav-link" data-page="templates">Templates</a></li>
+                <li><a href="#" class="nav-link" data-page="toolkits">Toolkits</a></li>
+                <li><a href="#" class="nav-link" data-page="checkin">Check-In</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <a href="/docs" target="_blank">API Docs</a>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- ==================== DASHBOARD ==================== -->
+            <div id="dashboard-page" class="page active">
+                <header class="page-header">
+                    <h2>Dashboard</h2>
+                    <p>Overview of all toolkits and their status</p>
+                </header>
+
+                <div class="stats-grid" id="statsGrid">
+                    <!-- Filled by JS -->
+                </div>
+
+                <section class="card">
+                    <div class="card-header">
+                        <h3>All Toolkits</h3>
+                        <button class="btn btn-primary btn-small" onclick="showPage('toolkits'); document.getElementById('createToolkitBtn').click();">+ New Toolkit</button>
+                    </div>
+                    <div class="toolkit-table-container">
+                        <table class="toolkit-table" id="dashboardToolkitTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Status</th>
+                                    <th>Last Check-In</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboardToolkitBody">
+                                <!-- Filled by JS -->
+                            </tbody>
+                        </table>
+                        <p class="empty-state" id="dashboardEmpty" style="display:none;">No toolkits registered yet. <a href="#" onclick="showPage('toolkits')">Create one</a></p>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ==================== TEMPLATES ==================== -->
+            <div id="templates-page" class="page">
+                <header class="page-header">
+                    <h2>Templates</h2>
+                    <p>Define toolkit layouts with tool positions</p>
+                </header>
+
+                <div class="page-actions">
+                    <button class="btn btn-primary" id="createTemplateBtn">+ Create Template</button>
+                </div>
+
+                <section class="card">
+                    <div class="template-grid" id="templateGrid">
+                        <!-- Filled by JS -->
+                    </div>
+                    <p class="empty-state" id="templatesEmpty" style="display:none;">No templates created yet.</p>
+                </section>
+            </div>
+
+            <!-- ==================== TEMPLATE EDITOR (Full Screen) ==================== -->
+            <div id="template-editor-page" class="page template-editor-fullscreen">
+                <header class="editor-header">
+                    <div class="editor-header-left">
+                        <button class="btn btn-secondary" onclick="closeTemplateEditor()">&larr; Back</button>
+                        <h2 id="templateEditorTitle">Create Template</h2>
+                    </div>
+                    <div class="editor-header-right">
+                        <button type="button" class="btn btn-primary" onclick="saveTemplateFromEditor()">Save Template</button>
+                    </div>
+                </header>
+
+                <div class="template-editor-layout">
+                    <div class="template-canvas-panel-full">
+                        <div class="template-upload-full" id="templateUploadArea">
+                            <input type="file" id="templateImageInput" accept="image/*">
+                            <div class="upload-placeholder" id="templatePlaceholder">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                    <polyline points="21 15 16 10 5 21"></polyline>
+                                </svg>
+                                <p>Upload reference image</p>
+                                <small>Upload an image of your toolkit to define tool positions</small>
+                            </div>
+                            <div class="canvas-wrapper-full" id="canvasWrapper" style="display:none;">
+                                <canvas id="templateCanvas"></canvas>
+                            </div>
+                        </div>
+                        <div class="canvas-controls-full" id="canvasControls" style="display:none;">
+                            <span class="canvas-hint">Select a tool from the right panel, then draw its ROI on the image</span>
+                            <div class="zoom-controls">
+                                <button class="btn btn-small" onclick="zoomTemplate(-0.25)">-</button>
+                                <span id="templateZoomLevel">100%</span>
+                                <button class="btn btn-small" onclick="zoomTemplate(0.25)">+</button>
+                                <button class="btn btn-small" onclick="fitTemplate()">Fit</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="template-form-panel-full">
+                        <form id="templateForm">
+                            <div class="form-group">
+                                <label>Template ID</label>
+                                <input type="text" id="templateId" placeholder="e.g., maintenance_kit" required pattern="[a-z0-9_]+">
+                                <small>Lowercase, numbers, underscores</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Template Name</label>
+                                <input type="text" id="templateName" placeholder="e.g., Maintenance Kit" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <input type="text" id="templateDesc" placeholder="Optional description">
+                            </div>
+                            <hr>
+                            <div class="tools-section">
+                                <div class="tools-header">
+                                    <h4>Tools (<span id="toolCount">0</span>)</h4>
+                                    <button type="button" class="btn btn-small btn-secondary" onclick="addTemplateTool()">+ Add Tool</button>
+                                </div>
+                                <div class="tools-list" id="templateToolsList"></div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Tool Editor Modal -->
+                <div class="modal" id="toolModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3 id="toolModalTitle">Add Tool</h3>
+                            <button class="modal-close" onclick="closeToolModal()">&times;</button>
+                        </div>
+                        <form id="toolForm">
+                            <div class="form-group">
+                                <label>Tool ID</label>
+                                <input type="text" id="toolIdInput" placeholder="e.g., wrench_10mm" required pattern="[a-z0-9_]+">
+                            </div>
+                            <div class="form-group">
+                                <label>Tool Name</label>
+                                <input type="text" id="toolNameInput" placeholder="e.g., 10mm Wrench" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Description</label>
+                                <input type="text" id="toolDescInput" placeholder="Optional">
+                            </div>
+                            <div class="roi-display" id="toolRoiDisplay">
+                                ROI: <span id="toolRoiText">Not set</span>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" onclick="closeToolModal()">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Save Tool</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== TOOLKITS ==================== -->
+            <div id="toolkits-page" class="page">
+                <header class="page-header">
+                    <h2>Toolkits</h2>
+                    <p>Manage physical toolkit instances</p>
+                </header>
+
+                <div class="page-actions">
+                    <button class="btn btn-primary" id="createToolkitBtn">+ Register Toolkit</button>
+                </div>
+
+                <section class="card">
+                    <div class="toolkit-table-container">
+                        <table class="toolkit-table" id="toolkitsTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Template</th>
+                                    <th>Location</th>
+                                    <th>Status</th>
+                                    <th>Tools</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="toolkitsBody"></tbody>
+                        </table>
+                        <p class="empty-state" id="toolkitsEmpty" style="display:none;">No toolkits registered. Create a template first, then register toolkits.</p>
+                    </div>
+                </section>
+
+                <!-- Create Toolkit Modal -->
+                <div class="modal" id="createToolkitModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Register New Toolkit</h3>
+                            <button class="modal-close" onclick="closeCreateToolkitModal()">&times;</button>
+                        </div>
+                        <form id="createToolkitForm">
+                            <div class="form-group">
+                                <label>Toolkit ID</label>
+                                <input type="text" id="newToolkitId" placeholder="e.g., MKA-001" required>
+                                <small>Unique identifier for this toolkit</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Template</label>
+                                <select id="newToolkitTemplate" required>
+                                    <option value="">Select a template...</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Name</label>
+                                <input type="text" id="newToolkitName" placeholder="e.g., Maintenance Kit A - Unit 1" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Location (optional)</label>
+                                <input type="text" id="newToolkitLocation" placeholder="e.g., Workshop A">
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" onclick="closeCreateToolkitModal()">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Create Toolkit</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== TOOLKIT DETAILS ==================== -->
+            <div id="details-page" class="page">
+                <header class="page-header">
+                    <div class="page-header-with-back">
+                        <button class="btn btn-secondary btn-small" onclick="showPage('toolkits')">&larr; Back</button>
+                        <div>
+                            <h2 id="detailsTitle">Toolkit Details</h2>
+                            <p id="detailsSubtitle"></p>
+                        </div>
+                    </div>
+                    <div class="page-actions">
+                        <button class="btn btn-primary" id="detailsCheckinBtn">Check In</button>
+                        <button class="btn btn-secondary" id="detailsCheckoutBtn">Check Out</button>
+                        <button class="btn btn-danger" id="detailsDeleteBtn">Delete</button>
+                    </div>
+                </header>
+
+                <div class="details-grid">
+                    <section class="card">
+                        <h3>Current Status</h3>
+                        <div class="status-display" id="detailsStatus"></div>
+                        <div class="details-meta" id="detailsMeta"></div>
+                    </section>
+
+                    <section class="card">
+                        <h3>Tool Status</h3>
+                        <div class="tool-status-list" id="detailsToolList"></div>
+                    </section>
+                </div>
+
+                <section class="card">
+                    <h3>Check-In History</h3>
+                    <div class="history-list" id="detailsHistory"></div>
+                </section>
+            </div>
+
+            <!-- ==================== CHECK-IN ==================== -->
+            <div id="checkin-page" class="page">
+                <header class="page-header">
+                    <h2>Check-In Toolkit</h2>
+                    <p>Scan a toolkit to verify all tools are present</p>
+                </header>
+
+                <div class="checkin-layout">
+                    <section class="card checkin-form-card">
+                        <form id="checkinForm">
+                            <div class="form-group">
+                                <label>Select Toolkit</label>
+                                <select id="checkinToolkitSelect" required>
+                                    <option value="">Select a toolkit...</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Upload Image</label>
+                                <div class="upload-area" id="checkinUploadArea">
+                                    <input type="file" id="checkinImageInput" accept="image/*" required>
+                                    <div class="upload-placeholder" id="checkinPlaceholder">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                            <polyline points="21 15 16 10 5 21"></polyline>
+                                        </svg>
+                                        <p>Click or drag image</p>
+                                    </div>
+                                    <img id="checkinPreview" class="preview-image" style="display:none;">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-large btn-block">Analyze Toolkit</button>
+                        </form>
+                    </section>
+
+                    <section class="card checkin-result-card" id="checkinResultCard" style="display:none;">
+                        <div class="checkin-status-banner" id="checkinStatusBanner"></div>
+                        <div class="checkin-summary" id="checkinSummary"></div>
+                        <div class="checkin-tools-grid">
+                            <div class="checkin-tool-section missing" id="checkinMissing" style="display:none;">
+                                <h4>Missing</h4>
+                                <div class="checkin-tool-list" id="checkinMissingList"></div>
+                            </div>
+                            <div class="checkin-tool-section uncertain" id="checkinUncertain" style="display:none;">
+                                <h4>Uncertain</h4>
+                                <div class="checkin-tool-list" id="checkinUncertainList"></div>
+                            </div>
+                            <div class="checkin-tool-section present" id="checkinPresent" style="display:none;">
+                                <h4>Present</h4>
+                                <div class="checkin-tool-list" id="checkinPresentList"></div>
+                            </div>
+                        </div>
+                        <div class="checkin-image-result">
+                            <img id="checkinResultImage" class="result-image">
+                        </div>
+                        <div class="checkin-actions">
+                            <button class="btn btn-primary btn-large" onclick="showPage('dashboard')">Done - Back to Dashboard</button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display:none;">
+            <div class="spinner"></div>
+            <p id="loadingText">Loading...</p>
+        </div>
+
+        <!-- Toast Container -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

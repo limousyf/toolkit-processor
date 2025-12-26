@@ -1,0 +1,123 @@
+{
+  "toolkit_id": "sample_toolkit",
+  "name": "Sample Maintenance Toolkit",
+  "description": "Sample toolkit from reference image - ROIs may need fine-tuning",
+  "foam_color": "dark_grey",
+  "dimensions": {
+    "width_mm": 500,
+    "height_mm": 380
+  },
+  "reference_image": "img/sample1.png",
+  "brightness_threshold": 55,
+  "occupied_ratio_threshold": 0.20,
+  "tools": [
+    {
+      "tool_id": "voltage_tester",
+      "name": "Voltage Tester",
+      "slot_index": 1,
+      "description": "Red/silver voltage tester - top left",
+      "roi": {
+        "x": 150,
+        "y": 100,
+        "width": 1100,
+        "height": 380
+      }
+    },
+    {
+      "tool_id": "wrench_large",
+      "name": "Large Combination Wrench",
+      "slot_index": 2,
+      "description": "Chrome combination wrench - left side",
+      "roi": {
+        "x": 80,
+        "y": 550,
+        "width": 400,
+        "height": 1450
+      }
+    },
+    {
+      "tool_id": "wrench_small",
+      "name": "Small Combination Wrench",
+      "slot_index": 3,
+      "description": "Chrome combination wrench - second from left",
+      "roi": {
+        "x": 500,
+        "y": 600,
+        "width": 480,
+        "height": 1350
+      }
+    },
+    {
+      "tool_id": "wire_brush",
+      "name": "Wire Brush",
+      "slot_index": 4,
+      "description": "Black wire brush - top center-right",
+      "roi": {
+        "x": 2100,
+        "y": 80,
+        "width": 1350,
+        "height": 520
+      }
+    },
+    {
+      "tool_id": "ratchet",
+      "name": "Ratchet with Extension",
+      "slot_index": 5,
+      "description": "Ratchet with red grip - below wire brush",
+      "roi": {
+        "x": 2650,
+        "y": 650,
+        "width": 1100,
+        "height": 420
+      }
+    },
+    {
+      "tool_id": "knipex_pliers",
+      "name": "Knipex Pliers Wrench",
+      "slot_index": 6,
+      "description": "Large Knipex pliers - center",
+      "roi": {
+        "x": 1050,
+        "y": 1280,
+        "width": 1650,
+        "height": 550
+      }
+    },
+    {
+      "tool_id": "diagonal_pliers",
+      "name": "Diagonal Cutting Pliers",
+      "slot_index": 7,
+      "description": "Red-handled diagonal pliers - right side",
+      "roi": {
+        "x": 2850,
+        "y": 1050,
+        "width": 620,
+        "height": 1150
+      }
+    },
+    {
+      "tool_id": "needle_nose_pliers",
+      "name": "Needle Nose Pliers",
+      "slot_index": 8,
+      "description": "Red-handled needle nose pliers - bottom center",
+      "roi": {
+        "x": 1550,
+        "y": 2050,
+        "width": 1150,
+        "height": 580
+      }
+    },
+    {
+      "tool_id": "tape_measure",
+      "name": "Milwaukee 25ft Tape Measure",
+      "slot_index": 9,
+      "description": "Red Milwaukee tape measure - bottom right",
+      "roi": {
+        "x": 2900,
+        "y": 2350,
+        "width": 620,
+        "height": 650
+      }
+    }
+  ]
+}
