@@ -23,7 +23,7 @@ from ..core.models import (
 )
 from .template_service import template_service
 from ..cv.processor import ToolkitProcessor
-from ..utils.image_utils import encode_image_base64
+from ..utils.image_utils import encode_image_base64, create_thumbnail
 
 
 class ToolkitInstanceService:
@@ -243,8 +243,15 @@ class ToolkitInstanceService:
 
         self._save_toolkit(toolkit)
 
-        # Create check-in record
+        # Create check-in record with thumbnail
         checkin_id = f"ci_{toolkit_id}_{now.strftime('%Y%m%d_%H%M%S')}"
+        thumbnail = None
+        if analysis.image_annotated:
+            try:
+                thumbnail = create_thumbnail(analysis.image_annotated, max_width=150)
+            except Exception:
+                pass  # Thumbnail is optional, continue without it
+
         checkin_record = CheckInRecord(
             checkin_id=checkin_id,
             toolkit_id=toolkit_id,
@@ -255,6 +262,7 @@ class ToolkitInstanceService:
             summary=summary,
             checked_in_by=checked_in_by,
             notes=notes,
+            thumbnail=thumbnail,
         )
         self._save_checkin(checkin_record)
 

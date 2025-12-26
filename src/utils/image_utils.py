@@ -110,3 +110,24 @@ def resize_image(image: np.ndarray, max_dimension: int = 1920) -> np.ndarray:
         new_width = int(width * (max_dimension / height))
 
     return cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+
+def create_thumbnail(image_base64: str, max_width: int = 150) -> str:
+    """Create a thumbnail from a base64 encoded image.
+
+    Args:
+        image_base64: Base64 data URL of the image
+        max_width: Maximum width of thumbnail (height scales proportionally)
+
+    Returns:
+        Base64 data URL of the thumbnail
+    """
+    image = decode_image_base64(image_base64)
+    height, width = image.shape[:2]
+
+    if width > max_width:
+        scale = max_width / width
+        new_height = int(height * scale)
+        image = cv2.resize(image, (max_width, new_height), interpolation=cv2.INTER_AREA)
+
+    return encode_image_base64(image, ".jpg")

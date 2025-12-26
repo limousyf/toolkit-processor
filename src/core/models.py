@@ -147,6 +147,7 @@ class CheckInRecord(BaseModel):
     summary: CheckInSummary
     checked_in_by: Optional[str] = Field(None, description="User who performed check-in")
     notes: Optional[str] = None
+    thumbnail: Optional[str] = Field(None, description="Base64 data URL of thumbnail image")
 
 
 class CheckInRequest(BaseModel):

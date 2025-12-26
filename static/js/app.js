@@ -778,11 +778,18 @@ async function viewToolkitDetails(id) {
             ? '<p class="empty-state">No check-in history</p>'
             : history.map(h => `
                 <div class="history-item">
-                    <div>
-                        <strong>${formatDate(h.timestamp)}</strong>
-                        <span class="status-badge ${h.status}">${formatStatus(h.status)}</span>
+                    ${h.thumbnail ? `<img src="${h.thumbnail}" class="history-thumbnail" alt="Check-in">` : ''}
+                    <div class="history-info">
+                        <div class="history-header">
+                            <strong>${formatDate(h.timestamp)}</strong>
+                            <span class="status-badge ${h.status}">${formatStatus(h.status)}</span>
+                        </div>
+                        <div class="history-summary">
+                            <span class="present">${h.summary.present} present</span>
+                            <span class="missing">${h.summary.missing} missing</span>
+                            <span class="uncertain">${h.summary.uncertain} uncertain</span>
+                        </div>
                     </div>
-                    <div>${h.summary.present}/${h.summary.total_tools} present</div>
                 </div>
             `).join('');
 
