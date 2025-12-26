@@ -134,37 +134,65 @@ class ToolDetector:
         roi_image = self.extract_roi(image, roi)
         metrics = self.compute_metrics(roi_image)
 
-        # Decision logic for dark foam
-        # Tool is present if we see enough bright OR colored pixels
+        # Decision logic for dark foam with mixed surface/cutout visibility
+        # When tool is missing, ROI shows mix of surface foam (light) and cutout shadow (dark)
+        # When tool is present, ROI shows the tool surface (typically brighter overall)
+        #
+        # Key insight: Mean brightness is the best discriminator
+        # - Present tools: μB typically 50-100
+        # - Missing (empty cutout + surface): μB typically 35-50
 
-        # Primary signal: brightness (metallic/chrome tools)
-        brightness_score = min(1.0, metrics.brightness_ratio / self.occupied_ratio_threshold)
+        # Mean brightness thresholds (primary discriminator)
+        MEAN_BRIGHT_PRESENT = 50.0   # Above this strongly suggests present
+        MEAN_BRIGHT_MISSING = 45.0   # Below this strongly suggests missing
 
-        # Secondary signal: saturation (colored handles - red, orange, etc.)
-        color_score = min(1.0, metrics.saturation_ratio / self.color_ratio_threshold)
+        # Check mean brightness first - it's the strongest signal
+        if metrics.mean_brightness >= MEAN_BRIGHT_PRESENT:
+            # High mean brightness - likely present, verify with other signals
+            brightness_score = min(1.0, metrics.brightness_ratio / self.occupied_ratio_threshold)
+            color_score = min(1.0, metrics.saturation_ratio / self.color_ratio_threshold)
+            edge_score = min(1.0, metrics.edge_density / settings.edge_density_threshold)
 
-        # Tertiary signal: edges (tool shapes have distinct edges)
-        edge_score = min(1.0, metrics.edge_density / settings.edge_density_threshold)
+            # Need at least some supporting evidence
+            support_score = (brightness_score + color_score + edge_score) / 3
+            if support_score >= 0.3:
+                status = ToolStatus.PRESENT
+                confidence = min(0.99, 0.75 + (metrics.mean_brightness - MEAN_BRIGHT_PRESENT) / 200)
+            else:
+                status = ToolStatus.UNCERTAIN
+                confidence = 0.6
 
-        # Combined score with weights
-        combined_score = (
-            settings.weight_brightness * brightness_score +
-            settings.weight_saturation * color_score +
-            settings.weight_edges * edge_score
-        )
-
-        # Determine status based on combined score
-        if combined_score >= 0.7:
-            status = ToolStatus.PRESENT
-            confidence = min(0.99, 0.7 + (combined_score - 0.7) * 0.9)
-        elif combined_score <= 0.3:
+        elif metrics.mean_brightness <= MEAN_BRIGHT_MISSING:
+            # Low mean brightness - likely missing
             status = ToolStatus.MISSING
-            confidence = min(0.99, 0.7 + (0.3 - combined_score) * 0.9)
+            # Lower μB = higher confidence it's missing
+            confidence = min(0.99, 0.70 + (MEAN_BRIGHT_MISSING - metrics.mean_brightness) / 100)
+
         else:
-            status = ToolStatus.UNCERTAIN
-            # Confidence decreases as we approach 0.5 (maximum uncertainty)
-            distance_from_midpoint = abs(combined_score - 0.5)
-            confidence = 0.5 + distance_from_midpoint * 0.4
+            # In between - use combined scoring
+            brightness_score = min(1.0, metrics.brightness_ratio / self.occupied_ratio_threshold)
+            color_score = min(1.0, metrics.saturation_ratio / self.color_ratio_threshold)
+            edge_score = min(1.0, metrics.edge_density / settings.edge_density_threshold)
+
+            # Normalize mean brightness to 0-1 in the uncertain range
+            mb_normalized = (metrics.mean_brightness - MEAN_BRIGHT_MISSING) / (MEAN_BRIGHT_PRESENT - MEAN_BRIGHT_MISSING)
+
+            combined_score = (
+                0.50 * mb_normalized +
+                0.20 * brightness_score +
+                0.15 * color_score +
+                0.15 * edge_score
+            )
+
+            if combined_score >= 0.6:
+                status = ToolStatus.PRESENT
+                confidence = 0.6 + combined_score * 0.3
+            elif combined_score <= 0.4:
+                status = ToolStatus.MISSING
+                confidence = 0.6 + (1 - combined_score) * 0.3
+            else:
+                status = ToolStatus.UNCERTAIN
+                confidence = 0.5
 
         return DetectionResult(
             status=status,
