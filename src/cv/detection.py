@@ -143,56 +143,63 @@ class ToolDetector:
         # - Missing (empty cutout + surface): μB typically 35-50
 
         # Mean brightness thresholds (primary discriminator)
-        MEAN_BRIGHT_PRESENT = 50.0   # Above this strongly suggests present
-        MEAN_BRIGHT_MISSING = 45.0   # Below this strongly suggests missing
+        # Based on real data: missing tool μB=41, present tools μB=47-92
+        MEAN_BRIGHT_PRESENT = 46.0   # Above this strongly suggests present
+        MEAN_BRIGHT_MISSING = 43.0   # Below this strongly suggests missing
+
+        # High saturation (colored handles/tools) is a strong presence indicator
+        HIGH_SATURATION_THRESHOLD = 0.70  # 70% saturation ratio
 
         # Check mean brightness first - it's the strongest signal
         if metrics.mean_brightness >= MEAN_BRIGHT_PRESENT:
-            # High mean brightness - likely present, verify with other signals
-            brightness_score = min(1.0, metrics.brightness_ratio / self.occupied_ratio_threshold)
-            color_score = min(1.0, metrics.saturation_ratio / self.color_ratio_threshold)
-            edge_score = min(1.0, metrics.edge_density / settings.edge_density_threshold)
+            # Above threshold - likely present
+            status = ToolStatus.PRESENT
 
-            # Need at least some supporting evidence
-            support_score = (brightness_score + color_score + edge_score) / 3
-            if support_score >= 0.3:
-                status = ToolStatus.PRESENT
-                confidence = min(0.99, 0.75 + (metrics.mean_brightness - MEAN_BRIGHT_PRESENT) / 200)
-            else:
-                status = ToolStatus.UNCERTAIN
-                confidence = 0.6
+            # Confidence based on how far above threshold + saturation boost
+            base_confidence = 0.80 + (metrics.mean_brightness - MEAN_BRIGHT_PRESENT) / 150
+            # Boost confidence if high saturation (colored tool visible)
+            if metrics.saturation_ratio >= HIGH_SATURATION_THRESHOLD:
+                base_confidence += 0.10
+            confidence = min(0.99, base_confidence)
 
         elif metrics.mean_brightness <= MEAN_BRIGHT_MISSING:
             # Low mean brightness - likely missing
             status = ToolStatus.MISSING
             # Lower μB = higher confidence it's missing
-            confidence = min(0.99, 0.70 + (MEAN_BRIGHT_MISSING - metrics.mean_brightness) / 100)
+            confidence = min(0.99, 0.75 + (MEAN_BRIGHT_MISSING - metrics.mean_brightness) / 50)
 
         else:
-            # In between - use combined scoring
-            brightness_score = min(1.0, metrics.brightness_ratio / self.occupied_ratio_threshold)
-            color_score = min(1.0, metrics.saturation_ratio / self.color_ratio_threshold)
-            edge_score = min(1.0, metrics.edge_density / settings.edge_density_threshold)
-
-            # Normalize mean brightness to 0-1 in the uncertain range
-            mb_normalized = (metrics.mean_brightness - MEAN_BRIGHT_MISSING) / (MEAN_BRIGHT_PRESENT - MEAN_BRIGHT_MISSING)
-
-            combined_score = (
-                0.50 * mb_normalized +
-                0.20 * brightness_score +
-                0.15 * color_score +
-                0.15 * edge_score
-            )
-
-            if combined_score >= 0.6:
+            # In between (narrow uncertain band 43-46)
+            # High saturation is a strong indicator of tool presence
+            if metrics.saturation_ratio >= HIGH_SATURATION_THRESHOLD:
+                # High saturation in uncertain range - likely present
                 status = ToolStatus.PRESENT
-                confidence = 0.6 + combined_score * 0.3
-            elif combined_score <= 0.4:
-                status = ToolStatus.MISSING
-                confidence = 0.6 + (1 - combined_score) * 0.3
+                confidence = 0.85
             else:
-                status = ToolStatus.UNCERTAIN
-                confidence = 0.5
+                # Use combined scoring for low-saturation cases
+                brightness_score = min(1.0, metrics.brightness_ratio / self.occupied_ratio_threshold)
+                color_score = min(1.0, metrics.saturation_ratio / self.color_ratio_threshold)
+                edge_score = min(1.0, metrics.edge_density / settings.edge_density_threshold)
+
+                # Normalize mean brightness to 0-1 in the uncertain range
+                mb_normalized = (metrics.mean_brightness - MEAN_BRIGHT_MISSING) / (MEAN_BRIGHT_PRESENT - MEAN_BRIGHT_MISSING)
+
+                combined_score = (
+                    0.40 * mb_normalized +
+                    0.20 * brightness_score +
+                    0.25 * color_score +
+                    0.15 * edge_score
+                )
+
+                if combined_score >= 0.5:
+                    status = ToolStatus.PRESENT
+                    confidence = 0.70 + combined_score * 0.25
+                elif combined_score <= 0.3:
+                    status = ToolStatus.MISSING
+                    confidence = 0.70 + (1 - combined_score) * 0.25
+                else:
+                    status = ToolStatus.UNCERTAIN
+                    confidence = 0.60
 
         return DetectionResult(
             status=status,
