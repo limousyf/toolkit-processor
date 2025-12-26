@@ -169,37 +169,31 @@ class ToolDetector:
             confidence = min(0.99, 0.75 + (MEAN_BRIGHT_MISSING - metrics.mean_brightness) / 50)
 
         else:
-            # In between (narrow uncertain band 43-46)
-            # High saturation is a strong indicator of tool presence
+            # In uncertain band (44-54) - be conservative, default to UNCERTAIN/MISSING
+            # High saturation (colored tool handles) is strong evidence of presence
             if metrics.saturation_ratio >= HIGH_SATURATION_THRESHOLD:
-                # High saturation in uncertain range - likely present
                 status = ToolStatus.PRESENT
                 confidence = 0.85
+            # High edge density (>30%) often indicates empty cutout edges, not a tool
+            elif metrics.edge_density > 0.30:
+                status = ToolStatus.MISSING
+                confidence = 0.75
+            # Low brightness ratio with low saturation suggests empty
+            elif metrics.brightness_ratio < 0.35 and metrics.saturation_ratio < 0.50:
+                status = ToolStatus.MISSING
+                confidence = 0.70
             else:
-                # Use combined scoring for low-saturation cases
-                brightness_score = min(1.0, metrics.brightness_ratio / self.occupied_ratio_threshold)
-                color_score = min(1.0, metrics.saturation_ratio / self.color_ratio_threshold)
-                edge_score = min(1.0, metrics.edge_density / settings.edge_density_threshold)
-
-                # Normalize mean brightness to 0-1 in the uncertain range
+                # Genuinely uncertain - use mean brightness to tip the scale
                 mb_normalized = (metrics.mean_brightness - MEAN_BRIGHT_MISSING) / (MEAN_BRIGHT_PRESENT - MEAN_BRIGHT_MISSING)
-
-                combined_score = (
-                    0.40 * mb_normalized +
-                    0.20 * brightness_score +
-                    0.25 * color_score +
-                    0.15 * edge_score
-                )
-
-                if combined_score >= 0.5:
+                if mb_normalized >= 0.7:
                     status = ToolStatus.PRESENT
-                    confidence = 0.70 + combined_score * 0.25
-                elif combined_score <= 0.3:
+                    confidence = 0.70
+                elif mb_normalized <= 0.3:
                     status = ToolStatus.MISSING
-                    confidence = 0.70 + (1 - combined_score) * 0.25
+                    confidence = 0.70
                 else:
                     status = ToolStatus.UNCERTAIN
-                    confidence = 0.60
+                    confidence = 0.55
 
         return DetectionResult(
             status=status,
