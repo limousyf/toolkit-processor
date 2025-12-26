@@ -500,8 +500,8 @@ hr {
 
 .tool-item-config {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     padding: 0.5rem 0.75rem;
     background: var(--gray-50);
     border: 1px solid var(--gray-200);
@@ -518,12 +518,15 @@ hr {
     background: rgba(37, 99, 235, 0.05);
 }
 
-.tool-item-config.has-roi {
-    border-left: 3px solid var(--success);
+.tool-item-config.no-roi {
+    opacity: 0.7;
 }
 
-.tool-item-config.no-roi {
-    border-left: 3px solid var(--warning);
+.tool-item-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
 }
 
 .tool-item-info {

@@ -5,6 +5,9 @@ let templates = [];
 let toolkits = [];
 let currentToolkitId = null;
 
+// ROI colors - shared between canvas and tool list
+const ROI_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6'];
+
 // Template editor state
 let templateState = {
     image: null,
@@ -271,6 +274,13 @@ function closeTemplateEditor() {
     showPage('templates');
 }
 
+function triggerImageReupload() {
+    // Show the file input and trigger click
+    const input = document.getElementById('templateImageInput');
+    input.style.display = 'block';
+    input.click();
+}
+
 function handleTemplateImage(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -326,11 +336,10 @@ function redrawTemplateCanvas() {
     ctx.drawImage(templateState.image, 0, 0, canvas.width, canvas.height);
 
     // Draw ROIs
-    const colors = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
     templateState.tools.forEach((tool, i) => {
         if (tool.roi) {
             const selected = i === templateState.selectedIndex;
-            const color = colors[i % colors.length];
+            const color = ROI_COLORS[i % ROI_COLORS.length];
 
             ctx.strokeStyle = selected ? '#2563eb' : color;
             ctx.lineWidth = selected ? 3 : 2;
@@ -498,8 +507,10 @@ function renderTemplateTools() {
     list.innerHTML = templateState.tools.map((tool, i) => {
         const hasRoi = tool.roi !== null;
         const selected = i === templateState.selectedIndex;
+        const color = ROI_COLORS[i % ROI_COLORS.length];
         return `
-            <div class="tool-item-config ${hasRoi ? 'has-roi' : 'no-roi'} ${selected ? 'selected' : ''}" onclick="selectTemplateTool(${i})">
+            <div class="tool-item-config ${hasRoi ? 'has-roi' : 'no-roi'} ${selected ? 'selected' : ''}" onclick="selectTemplateTool(${i})" style="border-left: 4px solid ${color};">
+                <div class="tool-item-color" style="background-color: ${color};"></div>
                 <div class="tool-item-info">
                     <div class="tool-item-name">${i + 1}. ${tool.name}</div>
                     <div class="tool-item-roi">${hasRoi ? `ROI: (${tool.roi.x}, ${tool.roi.y}) ${tool.roi.width}x${tool.roi.height}` : 'No ROI - select and draw'}</div>
