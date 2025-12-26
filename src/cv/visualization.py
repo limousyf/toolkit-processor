@@ -22,7 +22,7 @@ class ResultVisualizer:
         ToolStatus.UNCERTAIN: (0, 130, 200),
     }
 
-    def __init__(self, line_thickness: int = 2, font_scale: float = 0.5):
+    def __init__(self, line_thickness: int = 3, font_scale: float = 0.7):
         """Initialize visualizer.
 
         Args:
@@ -172,6 +172,7 @@ class ResultVisualizer:
         show_labels: bool = True,
         show_confidence: bool = True,
         show_icons: bool = True,
+        show_debug: bool = True,
     ) -> np.ndarray:
         """Annotate an image with analysis results.
 
@@ -182,6 +183,7 @@ class ResultVisualizer:
             show_labels: Whether to show tool name labels
             show_confidence: Whether to show confidence scores
             show_icons: Whether to show status icons
+            show_debug: Whether to show debug metrics (B/S/E scores)
 
         Returns:
             Annotated image copy
@@ -198,7 +200,66 @@ class ResultVisualizer:
             if show_icons:
                 self.draw_status_icon(annotated, roi, result.status)
 
+            # Draw debug metrics below the ROI box
+            if show_debug and result.debug_info:
+                self._draw_debug_metrics(annotated, roi, result.debug_info)
+
         return annotated
+
+    def _draw_debug_metrics(
+        self,
+        image: np.ndarray,
+        roi: ROI,
+        debug_info: dict,
+    ) -> None:
+        """Draw debug metrics below the ROI box.
+
+        Args:
+            image: Image to draw on
+            roi: Region of interest
+            debug_info: Dictionary with brightness_ratio, saturation_ratio, edge_density, mean_brightness
+        """
+        x1 = roi.x
+        y2 = roi.y + roi.height
+
+        # Build debug text
+        b = debug_info.get('brightness_ratio', 0) * 100
+        s = debug_info.get('saturation_ratio', 0) * 100
+        e = debug_info.get('edge_density', 0) * 100
+        mb = debug_info.get('mean_brightness', 0)
+
+        debug_text = f"B:{b:.0f}% S:{s:.0f}% E:{e:.0f}% uB:{mb:.0f}"
+
+        # Calculate text size
+        font_scale = 0.55
+        (text_w, text_h), _ = cv2.getTextSize(debug_text, self.font, font_scale, 1)
+
+        # Position below the box
+        padding = 2
+        label_y1 = y2 + 2
+        label_y2 = label_y1 + text_h + padding * 2
+        text_y = label_y2 - padding
+
+        # Draw background
+        cv2.rectangle(
+            image,
+            (x1, label_y1),
+            (x1 + text_w + padding * 2, label_y2),
+            (60, 60, 60),
+            -1,
+        )
+
+        # Draw text
+        cv2.putText(
+            image,
+            debug_text,
+            (x1 + padding, text_y),
+            self.font,
+            font_scale,
+            (200, 200, 200),
+            1,
+            cv2.LINE_AA,
+        )
 
     def create_summary_overlay(
         self,
