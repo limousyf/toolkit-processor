@@ -345,6 +345,12 @@ hr {
     border-radius: var(--radius);
 }
 
+.checkin-change-btn {
+    position: relative;
+    z-index: 10;
+    margin-top: 0.75rem;
+}
+
 /* Modals */
 .modal {
     display: none;

@@ -143,9 +143,9 @@ class ToolDetector:
         # - Missing (empty cutout + surface): μB typically 35-50
 
         # Mean brightness thresholds (primary discriminator)
-        # Based on real data: missing tool μB=41, present tools μB=47-92
-        MEAN_BRIGHT_PRESENT = 46.0   # Above this strongly suggests present
-        MEAN_BRIGHT_MISSING = 43.0   # Below this strongly suggests missing
+        # Based on real data: missing tool μB=41-50, present tools μB=57+
+        MEAN_BRIGHT_PRESENT = 54.0   # Above this strongly suggests present
+        MEAN_BRIGHT_MISSING = 44.0   # Below this strongly suggests missing
 
         # High saturation (colored handles/tools) is a strong presence indicator
         HIGH_SATURATION_THRESHOLD = 0.70  # 70% saturation ratio

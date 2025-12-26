@@ -844,6 +844,7 @@ async function loadCheckinPage() {
         document.getElementById('checkinImageInput').value = '';
         document.getElementById('checkinPlaceholder').style.display = 'flex';
         document.getElementById('checkinPreview').style.display = 'none';
+        document.getElementById('checkinChangeBtn').style.display = 'none';
         document.getElementById('checkinResultCard').style.display = 'none';
     } catch (err) {
         console.error('Failed to load toolkits:', err);
@@ -866,8 +867,18 @@ function handleCheckinImage(e) {
         document.getElementById('checkinPreview').src = event.target.result;
         document.getElementById('checkinPreview').style.display = 'block';
         document.getElementById('checkinPlaceholder').style.display = 'none';
+        document.getElementById('checkinChangeBtn').style.display = 'block';
     };
     reader.readAsDataURL(file);
+}
+
+function clearCheckinImage() {
+    document.getElementById('checkinImageInput').value = '';
+    document.getElementById('checkinPreview').src = '';
+    document.getElementById('checkinPreview').style.display = 'none';
+    document.getElementById('checkinPlaceholder').style.display = 'flex';
+    document.getElementById('checkinChangeBtn').style.display = 'none';
+    document.getElementById('checkinResultCard').style.display = 'none';
 }
 
 async function performCheckin(e) {
