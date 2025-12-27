@@ -16,6 +16,10 @@ class DetectionMetrics:
     edge_density: float  # Edge pixel density
     mean_brightness: float  # Average brightness in ROI
     mean_saturation: float  # Average saturation in ROI
+    # Reference comparison metrics (when reference image available)
+    ssim_score: Optional[float] = None
+    histogram_correlation: Optional[float] = None
+    normalized_diff: Optional[float] = None
 
 
 @dataclass
@@ -69,6 +73,146 @@ class ToolDetector:
 
         return image[y1:y2, x1:x2]
 
+    def normalize_histogram(self, source: np.ndarray, reference: np.ndarray) -> np.ndarray:
+        """Normalize source image histogram to match reference (histogram matching).
+
+        This reduces the impact of lighting variations between images.
+
+        Args:
+            source: Source image to normalize (grayscale)
+            reference: Reference image to match (grayscale)
+
+        Returns:
+            Normalized source image
+        """
+        # Calculate histograms
+        src_hist, _ = np.histogram(source.flatten(), 256, [0, 256])
+        ref_hist, _ = np.histogram(reference.flatten(), 256, [0, 256])
+
+        # Calculate CDFs
+        src_cdf = src_hist.cumsum()
+        ref_cdf = ref_hist.cumsum()
+
+        # Normalize CDFs
+        src_cdf = src_cdf / src_cdf[-1]
+        ref_cdf = ref_cdf / ref_cdf[-1]
+
+        # Create lookup table
+        lookup = np.zeros(256, dtype=np.uint8)
+        for i in range(256):
+            # Find the intensity in reference that has the same CDF value
+            j = np.searchsorted(ref_cdf, src_cdf[i])
+            lookup[i] = min(255, j)
+
+        # Apply lookup table
+        return lookup[source]
+
+    def compute_ssim(self, img1: np.ndarray, img2: np.ndarray) -> float:
+        """Compute Structural Similarity Index between two images.
+
+        Args:
+            img1: First image (grayscale)
+            img2: Second image (grayscale)
+
+        Returns:
+            SSIM score between -1 and 1 (1 = identical)
+        """
+        C1 = (0.01 * 255) ** 2
+        C2 = (0.03 * 255) ** 2
+
+        img1 = img1.astype(np.float64)
+        img2 = img2.astype(np.float64)
+
+        mu1 = cv2.GaussianBlur(img1, (11, 11), 1.5)
+        mu2 = cv2.GaussianBlur(img2, (11, 11), 1.5)
+
+        mu1_sq = mu1 ** 2
+        mu2_sq = mu2 ** 2
+        mu1_mu2 = mu1 * mu2
+
+        sigma1_sq = cv2.GaussianBlur(img1 ** 2, (11, 11), 1.5) - mu1_sq
+        sigma2_sq = cv2.GaussianBlur(img2 ** 2, (11, 11), 1.5) - mu2_sq
+        sigma12 = cv2.GaussianBlur(img1 * img2, (11, 11), 1.5) - mu1_mu2
+
+        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
+                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+
+        return float(np.mean(ssim_map))
+
+    def compute_histogram_correlation(self, img1: np.ndarray, img2: np.ndarray) -> float:
+        """Compute histogram correlation between two images.
+
+        Args:
+            img1: First image (grayscale)
+            img2: Second image (grayscale)
+
+        Returns:
+            Correlation value between -1 and 1 (1 = identical histograms)
+        """
+        hist1 = cv2.calcHist([img1], [0], None, [256], [0, 256])
+        hist2 = cv2.calcHist([img2], [0], None, [256], [0, 256])
+
+        cv2.normalize(hist1, hist1)
+        cv2.normalize(hist2, hist2)
+
+        return float(cv2.compareHist(hist1, hist2, cv2.HISTCMP_CORREL))
+
+    def compute_normalized_difference(self, current: np.ndarray, reference: np.ndarray) -> float:
+        """Compute normalized absolute difference between images.
+
+        Args:
+            current: Current image (grayscale)
+            reference: Reference image (grayscale)
+
+        Returns:
+            Normalized difference (0 = identical, 1 = completely different)
+        """
+        diff = cv2.absdiff(current, reference)
+        return float(np.mean(diff) / 255.0)
+
+    def compare_to_reference(
+        self,
+        current_roi: np.ndarray,
+        reference_roi: np.ndarray,
+    ) -> tuple[float, float, float]:
+        """Compare current ROI to reference ROI using multiple metrics.
+
+        Args:
+            current_roi: Current check-in ROI (BGR format)
+            reference_roi: Reference template ROI (BGR format)
+
+        Returns:
+            Tuple of (ssim_score, histogram_correlation, normalized_diff)
+        """
+        if current_roi.size == 0 or reference_roi.size == 0:
+            return 0.0, 0.0, 1.0
+
+        # Resize current to match reference if needed
+        if current_roi.shape[:2] != reference_roi.shape[:2]:
+            current_roi = cv2.resize(
+                current_roi,
+                (reference_roi.shape[1], reference_roi.shape[0]),
+                interpolation=cv2.INTER_LINEAR
+            )
+
+        # Convert to grayscale
+        current_gray = cv2.cvtColor(current_roi, cv2.COLOR_BGR2GRAY)
+        reference_gray = cv2.cvtColor(reference_roi, cv2.COLOR_BGR2GRAY)
+
+        # Option 3: Histogram normalization - match current histogram to reference
+        current_normalized = self.normalize_histogram(current_gray, reference_gray)
+
+        # Option 1: SSIM comparison (on normalized image)
+        ssim_score = self.compute_ssim(current_normalized, reference_gray)
+
+        # Option 2: Histogram correlation (on original images)
+        hist_corr = self.compute_histogram_correlation(current_gray, reference_gray)
+
+        # Normalized difference (on normalized image)
+        norm_diff = self.compute_normalized_difference(current_normalized, reference_gray)
+
+        return ssim_score, hist_corr, norm_diff
+
     def compute_metrics(self, roi_image: np.ndarray) -> DetectionMetrics:
         """Compute detection metrics for an ROI.
 
@@ -117,16 +261,21 @@ class ToolDetector:
             mean_saturation=mean_saturation,
         )
 
-    def detect(self, image: np.ndarray, roi: ROI) -> DetectionResult:
+    def detect(
+        self,
+        image: np.ndarray,
+        roi: ROI,
+        reference_image: Optional[np.ndarray] = None,
+    ) -> DetectionResult:
         """Detect if a tool is present in the given ROI.
 
-        For dark foam backgrounds:
-        - Empty slot: mostly dark pixels (foam visible)
-        - Occupied slot: bright pixels (metallic) and/or colored pixels (handles)
+        When reference_image is provided, uses SSIM and histogram comparison
+        for more robust detection under varying lighting conditions.
 
         Args:
             image: Full image (BGR format)
             roi: Region of interest for the tool slot
+            reference_image: Optional reference image for comparison-based detection
 
         Returns:
             DetectionResult with status, confidence, and metrics
@@ -134,56 +283,102 @@ class ToolDetector:
         roi_image = self.extract_roi(image, roi)
         metrics = self.compute_metrics(roi_image)
 
-        # Decision logic for dark foam with mixed surface/cutout visibility
-        # When tool is missing, ROI shows mix of surface foam (light) and cutout shadow (dark)
-        # When tool is present, ROI shows the tool surface (typically brighter overall)
-        #
-        # Key insight: Mean brightness is the best discriminator
-        # - Present tools: μB typically 50-100
-        # - Missing (empty cutout + surface): μB typically 35-50
+        # If reference image provided, use comparison-based detection
+        if reference_image is not None:
+            ref_roi_image = self.extract_roi(reference_image, roi)
 
+            if ref_roi_image.size > 0:
+                ssim_score, hist_corr, norm_diff = self.compare_to_reference(
+                    roi_image, ref_roi_image
+                )
+                metrics.ssim_score = ssim_score
+                metrics.histogram_correlation = hist_corr
+                metrics.normalized_diff = norm_diff
+
+                # Reference-based detection logic
+                # High SSIM = current looks like reference = tool PRESENT
+                # Low SSIM = current looks different = tool MISSING (showing foam)
+                #
+                # Thresholds tuned for real-world toolkit photos:
+                # - SSIM >= 0.13: Tool likely present (real photos have lower SSIM due to lighting)
+                # - SSIM <= 0.08: Tool likely missing (foam visible instead of tool)
+                # - Histogram correlation helps disambiguate edge cases
+
+                SSIM_PRESENT = 0.13
+                SSIM_MISSING = 0.08
+                HIST_CORR_PRESENT = 0.30
+                HIST_CORR_MISSING = 0.15
+                NORM_DIFF_MISSING = 0.30
+
+                # Combine metrics for robust decision
+                if ssim_score >= SSIM_PRESENT and hist_corr >= HIST_CORR_PRESENT:
+                    # Strong match - tool present
+                    status = ToolStatus.PRESENT
+                    confidence = min(0.99, 0.75 + ssim_score * 0.3)
+
+                elif ssim_score <= SSIM_MISSING or norm_diff >= NORM_DIFF_MISSING:
+                    # Poor match or high difference - tool missing
+                    status = ToolStatus.MISSING
+                    confidence = min(0.99, 0.70 + (SSIM_MISSING - ssim_score) * 0.5)
+
+                elif ssim_score >= SSIM_PRESENT:
+                    # Good SSIM but lower histogram correlation
+                    status = ToolStatus.PRESENT
+                    confidence = 0.75
+
+                elif hist_corr <= HIST_CORR_MISSING:
+                    # Poor histogram match
+                    status = ToolStatus.MISSING
+                    confidence = 0.70
+
+                else:
+                    # Uncertain zone - use combined score
+                    combined_score = (ssim_score + hist_corr) / 2
+                    if combined_score >= 0.55:
+                        status = ToolStatus.PRESENT
+                        confidence = 0.65
+                    elif combined_score <= 0.40:
+                        status = ToolStatus.MISSING
+                        confidence = 0.65
+                    else:
+                        status = ToolStatus.UNCERTAIN
+                        confidence = 0.50
+
+                return DetectionResult(
+                    status=status,
+                    confidence=round(confidence, 3),
+                    metrics=metrics,
+                )
+
+        # Fallback: brightness-based detection (no reference available)
         # Mean brightness thresholds (primary discriminator)
-        # Based on real data: missing tool μB=41-50, present tools μB=57+
-        MEAN_BRIGHT_PRESENT = 54.0   # Above this strongly suggests present
-        MEAN_BRIGHT_MISSING = 44.0   # Below this strongly suggests missing
+        MEAN_BRIGHT_PRESENT = 54.0
+        MEAN_BRIGHT_MISSING = 44.0
+        HIGH_SATURATION_THRESHOLD = 0.70
 
-        # High saturation (colored handles/tools) is a strong presence indicator
-        HIGH_SATURATION_THRESHOLD = 0.70  # 70% saturation ratio
-
-        # Check mean brightness first - it's the strongest signal
         if metrics.mean_brightness >= MEAN_BRIGHT_PRESENT:
-            # Above threshold - likely present
             status = ToolStatus.PRESENT
-
-            # Confidence based on how far above threshold + saturation boost
             base_confidence = 0.80 + (metrics.mean_brightness - MEAN_BRIGHT_PRESENT) / 150
-            # Boost confidence if high saturation (colored tool visible)
             if metrics.saturation_ratio >= HIGH_SATURATION_THRESHOLD:
                 base_confidence += 0.10
             confidence = min(0.99, base_confidence)
 
         elif metrics.mean_brightness <= MEAN_BRIGHT_MISSING:
-            # Low mean brightness - likely missing
             status = ToolStatus.MISSING
-            # Lower μB = higher confidence it's missing
             confidence = min(0.99, 0.75 + (MEAN_BRIGHT_MISSING - metrics.mean_brightness) / 50)
 
         else:
-            # In uncertain band (44-54) - be conservative, default to UNCERTAIN/MISSING
-            # High saturation (colored tool handles) is strong evidence of presence
+            # Uncertain band
             if metrics.saturation_ratio >= HIGH_SATURATION_THRESHOLD:
                 status = ToolStatus.PRESENT
                 confidence = 0.85
-            # High edge density (>30%) often indicates empty cutout edges, not a tool
             elif metrics.edge_density > 0.30:
                 status = ToolStatus.MISSING
                 confidence = 0.75
-            # Low brightness ratio with low saturation suggests empty
             elif metrics.brightness_ratio < 0.35 and metrics.saturation_ratio < 0.50:
                 status = ToolStatus.MISSING
                 confidence = 0.70
             else:
-                # Genuinely uncertain - use mean brightness to tip the scale
                 mb_normalized = (metrics.mean_brightness - MEAN_BRIGHT_MISSING) / (MEAN_BRIGHT_PRESENT - MEAN_BRIGHT_MISSING)
                 if mb_normalized >= 0.7:
                     status = ToolStatus.PRESENT

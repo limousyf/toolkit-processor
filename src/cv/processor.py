@@ -56,6 +56,7 @@ class ToolkitProcessor:
         toolkit_config: ToolkitConfig,
         include_annotated_image: bool = True,
         include_debug_info: bool = False,
+        reference_image: Optional[np.ndarray] = None,
     ) -> AnalysisResult:
         """Analyze an image against a toolkit configuration.
 
@@ -64,6 +65,7 @@ class ToolkitProcessor:
             toolkit_config: Toolkit configuration with tool ROIs
             include_annotated_image: Whether to include annotated image in result
             include_debug_info: Whether to include detection metrics in result
+            reference_image: Optional reference image for comparison-based detection
 
         Returns:
             AnalysisResult with tool statuses and summary
@@ -94,7 +96,11 @@ class ToolkitProcessor:
 
         # Step 3: Process each tool slot
         for tool in toolkit_config.tools:
-            detection = detector.detect(working_image, tool.roi)
+            detection = detector.detect(
+                working_image,
+                tool.roi,
+                reference_image=reference_image,
+            )
 
             debug_info = None
             if include_debug_info:
@@ -105,6 +111,13 @@ class ToolkitProcessor:
                     "mean_brightness": round(detection.metrics.mean_brightness, 2),
                     "mean_saturation": round(detection.metrics.mean_saturation, 2),
                 }
+                # Add reference comparison metrics if available
+                if detection.metrics.ssim_score is not None:
+                    debug_info["ssim_score"] = round(detection.metrics.ssim_score, 4)
+                if detection.metrics.histogram_correlation is not None:
+                    debug_info["histogram_correlation"] = round(detection.metrics.histogram_correlation, 4)
+                if detection.metrics.normalized_diff is not None:
+                    debug_info["normalized_diff"] = round(detection.metrics.normalized_diff, 4)
 
             tool_results.append(ToolAnalysisResult(
                 tool_id=tool.tool_id,

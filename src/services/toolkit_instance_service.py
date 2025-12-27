@@ -142,6 +142,9 @@ class ToolkitInstanceService:
         checked_in_by: Optional[str] = None,
     ) -> CheckInResponse:
         """Perform a check-in for a toolkit."""
+        from ..cv.registration import ToolkitRegistration
+        from ..core.config import settings
+
         # Get toolkit and template
         toolkit = self.get_toolkit(toolkit_id)
         if not toolkit:
@@ -151,88 +154,77 @@ class ToolkitInstanceService:
         if not template:
             raise ValueError(f"Template '{toolkit.template_id}' not found")
 
-        # Determine ROI transformation based on template's ArUco bounds
-        tools_to_use = template.tools
-
-        if template.aruco_bounds:
-            # Template has ArUco markers - transform ROIs to canonical space
-            # Canonical size = content area dimensions (preserves aspect ratio)
-            bounds = template.aruco_bounds
-            content_width = bounds.content_width
-            content_height = bounds.content_height
-
-            # Use content area dimensions as canonical size (rounded to int)
-            canonical_width = int(content_width)
-            canonical_height = int(content_height)
-
-            # Update processor's registration with template-specific canonical size
-            from ..cv.registration import ToolkitRegistration
-            from ..core.config import settings
-
-            self.processor.registration = ToolkitRegistration(
-                dictionary=settings.aruco_dictionary,
-                marker_ids=settings.aruco_marker_ids,
-                canonical_size=(canonical_width, canonical_height),
-                min_markers_for_homography=settings.aruco_min_markers,
+        # Require ArUco bounds on template
+        if not template.aruco_bounds:
+            raise ValueError(
+                f"Template '{template.template_id}' does not have ArUco markers configured. "
+                "Please upload a reference image with ArUco markers."
             )
 
-            # Transform ROIs from template image space to canonical space
-            # ROIs are offset by template's TL marker position and scaled
-            tl_x, tl_y = bounds.top_left
-            scale_x = canonical_width / content_width
-            scale_y = canonical_height / content_height
+        # Set up registration with template-specific canonical size
+        bounds = template.aruco_bounds
+        content_width = bounds.content_width
+        content_height = bounds.content_height
+        canonical_width = int(content_width)
+        canonical_height = int(content_height)
 
-            transformed_tools = []
-            for tool in template.tools:
-                # Translate ROI origin relative to TL marker, then scale
-                new_x = int((tool.roi.x - tl_x) * scale_x)
-                new_y = int((tool.roi.y - tl_y) * scale_y)
-                new_width = int(tool.roi.width * scale_x)
-                new_height = int(tool.roi.height * scale_y)
+        registration = ToolkitRegistration(
+            dictionary=settings.aruco_dictionary,
+            marker_ids=settings.aruco_marker_ids,
+            canonical_size=(canonical_width, canonical_height),
+            min_markers_for_homography=settings.aruco_min_markers,
+        )
 
-                transformed_roi = ROI(
-                    x=max(0, new_x),
-                    y=max(0, new_y),
-                    width=new_width,
-                    height=new_height,
-                )
-                transformed_tool = ToolDefinition(
-                    tool_id=tool.tool_id,
-                    name=tool.name,
-                    slot_index=tool.slot_index,
-                    roi=transformed_roi,
-                    description=tool.description,
-                )
-                transformed_tools.append(transformed_tool)
-            tools_to_use = transformed_tools
+        # Detect ArUco markers FIRST - fail if not found
+        reg_result = registration.register(image)
 
-        else:
-            # No ArUco bounds - use legacy scaling based on image dimensions
-            img_height, img_width = image.shape[:2]
+        if not reg_result.success:
+            markers_found = reg_result.markers_detected
+            reason = reg_result.fallback_reason or "Unknown error"
+            raise ValueError(
+                f"Cannot process check-in: {reason}. "
+                f"Found {markers_found}/4 ArUco markers. "
+                "Please ensure all 4 corner markers are visible in the image."
+            )
 
-            if template.image_width and template.image_height:
-                scale_x = img_width / template.image_width
-                scale_y = img_height / template.image_height
+        # Use the warped (perspective-corrected) image for detection
+        working_image = reg_result.warped_image
 
-                # Only scale if dimensions differ significantly (more than 1% difference)
-                if abs(scale_x - 1.0) > 0.01 or abs(scale_y - 1.0) > 0.01:
-                    scaled_tools = []
-                    for tool in template.tools:
-                        scaled_roi = ROI(
-                            x=int(tool.roi.x * scale_x),
-                            y=int(tool.roi.y * scale_y),
-                            width=int(tool.roi.width * scale_x),
-                            height=int(tool.roi.height * scale_y),
-                        )
-                        scaled_tool = ToolDefinition(
-                            tool_id=tool.tool_id,
-                            name=tool.name,
-                            slot_index=tool.slot_index,
-                            roi=scaled_roi,
-                            description=tool.description,
-                        )
-                        scaled_tools.append(scaled_tool)
-                    tools_to_use = scaled_tools
+        # Build registration info for response
+        registration_info = RegistrationInfo(
+            markers_detected=reg_result.markers_detected,
+            markers_expected=4,
+            homography_applied=reg_result.success,
+            fallback_reason=reg_result.fallback_reason,
+        )
+
+        # Transform ROIs from template image space to canonical space
+        tl_x, tl_y = bounds.top_left
+        scale_x = canonical_width / content_width
+        scale_y = canonical_height / content_height
+
+        tools_to_use = []
+        for tool in template.tools:
+            # Translate ROI origin relative to TL marker, then scale
+            new_x = int((tool.roi.x - tl_x) * scale_x)
+            new_y = int((tool.roi.y - tl_y) * scale_y)
+            new_width = int(tool.roi.width * scale_x)
+            new_height = int(tool.roi.height * scale_y)
+
+            transformed_roi = ROI(
+                x=max(0, new_x),
+                y=max(0, new_y),
+                width=new_width,
+                height=new_height,
+            )
+            transformed_tool = ToolDefinition(
+                tool_id=tool.tool_id,
+                name=tool.name,
+                slot_index=tool.slot_index,
+                roi=transformed_roi,
+                description=tool.description,
+            )
+            tools_to_use.append(transformed_tool)
 
         # Convert template to legacy ToolkitConfig for CV processing
         toolkit_config = ToolkitConfig(
@@ -245,13 +237,32 @@ class ToolkitInstanceService:
             occupied_ratio_threshold=template.occupied_ratio_threshold,
         )
 
-        # Run CV analysis (debug enabled to diagnose detection issues)
+        # Load and warp reference image for comparison-based detection
+        reference_warped = None
+        reference_image_path = template_service.get_image_path(template.template_id)
+        if reference_image_path:
+            import cv2
+            reference_raw = cv2.imread(str(reference_image_path))
+            if reference_raw is not None:
+                # Warp reference image to canonical space using its ArUco markers
+                ref_reg_result = registration.register(reference_raw)
+                if ref_reg_result.success:
+                    reference_warped = ref_reg_result.warped_image
+
+        # Disable processor's own registration (we already did it)
+        self.processor.registration = None
+
+        # Run CV analysis on the WARPED image with reference comparison
         analysis = self.processor.analyze(
-            image=image,
+            image=working_image,
             toolkit_config=toolkit_config,
             include_annotated_image=True,
             include_debug_info=True,
+            reference_image=reference_warped,
         )
+
+        # Override registration info with our result
+        analysis.registration = registration_info
 
         # Convert results (include debug info for diagnostics)
         tool_results = [
