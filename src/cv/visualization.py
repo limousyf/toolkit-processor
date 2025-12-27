@@ -45,7 +45,7 @@ class ResultVisualizer:
 
         Args:
             image: Image to draw on (will be modified in place)
-            roi: Region of interest coordinates
+            roi: Region of interest coordinates (rectangle or polygon)
             status: Tool status for color coding
             label: Optional label text
             confidence: Optional confidence score to display
@@ -56,10 +56,16 @@ class ResultVisualizer:
         color = self.COLORS[status]
         bg_color = self.LABEL_BG_COLORS[status]
 
-        # Draw rectangle
-        x1, y1 = roi.x, roi.y
-        x2, y2 = roi.x + roi.width, roi.y + roi.height
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, self.line_thickness)
+        # Get bounding box for label positioning
+        x1, y1, w, h = roi.bounding_box
+        x2, y2 = x1 + w, y1 + h
+
+        # Draw polygon or rectangle
+        if roi.is_polygon:
+            pts = np.array(roi.points, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(image, [pts], True, color, self.line_thickness)
+        else:
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, self.line_thickness)
 
         # Draw label if provided
         if label:
@@ -119,17 +125,18 @@ class ResultVisualizer:
 
         Args:
             image: Image to draw on
-            roi: Region of interest
+            roi: Region of interest (rectangle or polygon)
             status: Tool status
 
         Returns:
             Modified image
         """
         color = self.COLORS[status]
-        center_x = roi.x + roi.width // 2
-        center_y = roi.y + roi.height // 2
+        x, y, w, h = roi.bounding_box
+        center_x = x + w // 2
+        center_y = y + h // 2
 
-        icon_size = min(roi.width, roi.height) // 4
+        icon_size = min(w, h) // 4
         icon_size = max(10, min(icon_size, 30))  # Clamp size
 
         if status == ToolStatus.PRESENT:
@@ -216,11 +223,12 @@ class ResultVisualizer:
 
         Args:
             image: Image to draw on
-            roi: Region of interest
+            roi: Region of interest (rectangle or polygon)
             debug_info: Dictionary with brightness_ratio, saturation_ratio, edge_density, mean_brightness
         """
-        x1 = roi.x
-        y2 = roi.y + roi.height
+        x, y, w, h = roi.bounding_box
+        x1 = x
+        y2 = y + h
 
         # Build debug text
         b = debug_info.get('brightness_ratio', 0) * 100

@@ -162,6 +162,25 @@ function setupTemplateEditor() {
     canvas.addEventListener('mousemove', handleCanvasMouseMove);
     canvas.addEventListener('mouseup', handleCanvasMouseUp);
     canvas.addEventListener('mouseleave', handleCanvasMouseUp);
+    canvas.addEventListener('dblclick', handleCanvasDoubleClick);
+    canvas.addEventListener('contextmenu', handleCanvasRightClick);
+}
+
+function toggleDrawMode() {
+    if (!templateState) return;
+    templateState.drawMode = templateState.drawMode === 'rectangle' ? 'polygon' : 'rectangle';
+    templateState.currentPolygon = [];
+    templateState.currentRect = null;
+    templateState.isDrawing = false;
+    updateDrawModeButton();
+    redrawTemplateCanvas();
+}
+
+function updateDrawModeButton() {
+    const btn = document.getElementById('drawModeBtn');
+    if (btn && templateState) {
+        btn.textContent = templateState.drawMode === 'polygon' ? 'Mode: Polygon' : 'Mode: Rectangle';
+    }
 }
 
 function openTemplateEditor() {
@@ -170,7 +189,9 @@ function openTemplateEditor() {
         image: null, imageWidth: 0, imageHeight: 0, zoom: 1,
         tools: [], selectedIndex: -1, isDrawing: false,
         drawStart: null, currentRect: null, editingIndex: -1,
-        editingTemplateId: null, arucoMarkers: null, showAruco: true
+        editingTemplateId: null, arucoMarkers: null, showAruco: true,
+        drawMode: 'polygon',  // 'rectangle' or 'polygon'
+        currentPolygon: []    // Points being drawn for polygon mode
     };
 
     document.getElementById('templateEditorTitle').textContent = 'Create Template';
@@ -213,7 +234,9 @@ async function editTemplate(templateId) {
             })),
             selectedIndex: -1, isDrawing: false,
             drawStart: null, currentRect: null, editingIndex: -1,
-            editingTemplateId: templateId, arucoMarkers: null, showAruco: true
+            editingTemplateId: templateId, arucoMarkers: null, showAruco: true,
+            drawMode: 'polygon',  // 'rectangle' or 'polygon'
+            currentPolygon: []    // Points being drawn for polygon mode
         };
 
         document.getElementById('templateEditorTitle').textContent = 'Edit Template';
@@ -379,21 +402,50 @@ function redrawTemplateCanvas() {
 
             ctx.strokeStyle = selected ? '#2563eb' : color;
             ctx.lineWidth = selected ? 3 : 2;
-            ctx.strokeRect(tool.roi.x * z, tool.roi.y * z, tool.roi.width * z, tool.roi.height * z);
 
-            if (selected) {
-                ctx.fillStyle = 'rgba(37, 99, 235, 0.1)';
-                ctx.fillRect(tool.roi.x * z, tool.roi.y * z, tool.roi.width * z, tool.roi.height * z);
+            // Check if polygon or rectangle
+            if (tool.roi.points && tool.roi.points.length >= 3) {
+                // Draw polygon
+                ctx.beginPath();
+                ctx.moveTo(tool.roi.points[0][0] * z, tool.roi.points[0][1] * z);
+                for (let j = 1; j < tool.roi.points.length; j++) {
+                    ctx.lineTo(tool.roi.points[j][0] * z, tool.roi.points[j][1] * z);
+                }
+                ctx.closePath();
+                ctx.stroke();
+
+                if (selected) {
+                    ctx.fillStyle = 'rgba(37, 99, 235, 0.1)';
+                    ctx.fill();
+                }
+
+                // Draw vertices
+                tool.roi.points.forEach(pt => {
+                    ctx.beginPath();
+                    ctx.arc(pt[0] * z, pt[1] * z, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = selected ? '#2563eb' : color;
+                    ctx.fill();
+                });
+            } else {
+                // Draw rectangle
+                ctx.strokeRect(tool.roi.x * z, tool.roi.y * z, tool.roi.width * z, tool.roi.height * z);
+
+                if (selected) {
+                    ctx.fillStyle = 'rgba(37, 99, 235, 0.1)';
+                    ctx.fillRect(tool.roi.x * z, tool.roi.y * z, tool.roi.width * z, tool.roi.height * z);
+                }
             }
 
-            // Label
+            // Label (use bounding box for position)
+            const labelX = tool.roi.x * z;
+            const labelY = tool.roi.y * z;
             ctx.fillStyle = selected ? '#2563eb' : color;
             const label = `${i + 1}: ${tool.name}`;
             ctx.font = `${Math.max(12, 14 * z)}px sans-serif`;
             const textW = ctx.measureText(label).width;
-            ctx.fillRect(tool.roi.x * z, tool.roi.y * z - 18 * z, textW + 8, 18 * z);
+            ctx.fillRect(labelX, labelY - 18 * z, textW + 8, 18 * z);
             ctx.fillStyle = '#fff';
-            ctx.fillText(label, tool.roi.x * z + 4, tool.roi.y * z - 4 * z);
+            ctx.fillText(label, labelX + 4, labelY - 4 * z);
         }
     });
 
@@ -458,7 +510,7 @@ function redrawTemplateCanvas() {
         }
     }
 
-    // Draw current rect
+    // Draw current rect (rectangle mode)
     if (templateState.currentRect) {
         ctx.strokeStyle = '#2563eb';
         ctx.lineWidth = 2;
@@ -470,6 +522,46 @@ function redrawTemplateCanvas() {
             templateState.currentRect.height * z
         );
         ctx.setLineDash([]);
+    }
+
+    // Draw current polygon being drawn (polygon mode)
+    if (templateState.currentPolygon && templateState.currentPolygon.length > 0) {
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+
+        // Draw lines between points
+        ctx.beginPath();
+        ctx.moveTo(templateState.currentPolygon[0][0] * z, templateState.currentPolygon[0][1] * z);
+        for (let i = 1; i < templateState.currentPolygon.length; i++) {
+            ctx.lineTo(templateState.currentPolygon[i][0] * z, templateState.currentPolygon[i][1] * z);
+        }
+
+        // Draw preview line to mouse position
+        if (templateState.mousePos) {
+            ctx.lineTo(templateState.mousePos.x * z, templateState.mousePos.y * z);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw points
+        templateState.currentPolygon.forEach((pt, i) => {
+            ctx.beginPath();
+            ctx.arc(pt[0] * z, pt[1] * z, i === 0 ? 8 : 5, 0, Math.PI * 2);
+            ctx.fillStyle = i === 0 ? '#22c55e' : '#2563eb';  // First point green (close target)
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        });
+
+        // Draw point count hint
+        ctx.fillStyle = '#2563eb';
+        ctx.font = '12px sans-serif';
+        const hint = templateState.currentPolygon.length < 3
+            ? `${templateState.currentPolygon.length}/3 points (need 3 min)`
+            : `${templateState.currentPolygon.length} points - double-click or click first point to close`;
+        ctx.fillText(hint, 10, 25);
     }
 }
 
@@ -489,12 +581,40 @@ function handleCanvasMouseDown(e) {
     }
 
     const coords = getCanvasCoords(e);
-    templateState.isDrawing = true;
-    templateState.drawStart = coords;
-    templateState.currentRect = { x: coords.x, y: coords.y, width: 0, height: 0 };
+
+    if (templateState.drawMode === 'polygon') {
+        // Polygon mode: add point on click
+        if (templateState.currentPolygon.length > 0) {
+            // Check if clicking near the first point to close polygon
+            const first = templateState.currentPolygon[0];
+            const dist = Math.sqrt(Math.pow(coords.x - first[0], 2) + Math.pow(coords.y - first[1], 2));
+            if (dist < 15 && templateState.currentPolygon.length >= 3) {
+                // Close the polygon
+                finishPolygon();
+                return;
+            }
+        }
+        templateState.currentPolygon.push([coords.x, coords.y]);
+        redrawTemplateCanvas();
+    } else {
+        // Rectangle mode
+        templateState.isDrawing = true;
+        templateState.drawStart = coords;
+        templateState.currentRect = { x: coords.x, y: coords.y, width: 0, height: 0 };
+    }
 }
 
 function handleCanvasMouseMove(e) {
+    if (templateState.drawMode === 'polygon') {
+        // For polygon mode, just redraw to show preview line
+        if (templateState.currentPolygon.length > 0) {
+            templateState.mousePos = getCanvasCoords(e);
+            redrawTemplateCanvas();
+        }
+        return;
+    }
+
+    // Rectangle mode
     if (!templateState.isDrawing) return;
 
     const coords = getCanvasCoords(e);
@@ -508,16 +628,66 @@ function handleCanvasMouseMove(e) {
 }
 
 function handleCanvasMouseUp(e) {
+    if (templateState.drawMode === 'polygon') {
+        // Polygon mode handles completion via double-click or closing
+        return;
+    }
+
+    // Rectangle mode
     if (!templateState.isDrawing) return;
     templateState.isDrawing = false;
 
     if (templateState.currentRect && templateState.currentRect.width > 10 && templateState.currentRect.height > 10) {
-        templateState.tools[templateState.selectedIndex].roi = { ...templateState.currentRect };
+        templateState.tools[templateState.selectedIndex].roi = { ...templateState.currentRect, points: null };
         renderTemplateTools();
     }
 
     templateState.currentRect = null;
     redrawTemplateCanvas();
+}
+
+function handleCanvasDoubleClick(e) {
+    if (templateState.drawMode === 'polygon' && templateState.currentPolygon.length >= 3) {
+        finishPolygon();
+    }
+}
+
+function handleCanvasRightClick(e) {
+    e.preventDefault();
+    if (templateState.drawMode === 'polygon' && templateState.currentPolygon.length > 0) {
+        // Cancel current polygon
+        templateState.currentPolygon = [];
+        redrawTemplateCanvas();
+        showToast('Polygon cancelled', 'info');
+    }
+}
+
+function finishPolygon() {
+    if (templateState.currentPolygon.length < 3) {
+        showToast('Polygon needs at least 3 points', 'warning');
+        return;
+    }
+
+    // Calculate bounding box for backwards compatibility
+    const xs = templateState.currentPolygon.map(p => p[0]);
+    const ys = templateState.currentPolygon.map(p => p[1]);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+
+    templateState.tools[templateState.selectedIndex].roi = {
+        x: minX,
+        y: minY,
+        width: maxX - minX,
+        height: maxY - minY,
+        points: [...templateState.currentPolygon]
+    };
+
+    templateState.currentPolygon = [];
+    renderTemplateTools();
+    redrawTemplateCanvas();
+    showToast('Polygon saved', 'success');
 }
 
 function addTemplateTool() {
@@ -537,9 +707,16 @@ function editTemplateTool(index) {
     document.getElementById('toolIdInput').value = tool.tool_id;
     document.getElementById('toolNameInput').value = tool.name;
     document.getElementById('toolDescInput').value = tool.description || '';
-    document.getElementById('toolRoiText').textContent = tool.roi
-        ? `(${tool.roi.x}, ${tool.roi.y}) ${tool.roi.width}x${tool.roi.height}`
-        : 'Not set';
+
+    let roiText = 'Not set';
+    if (tool.roi) {
+        if (tool.roi.points && tool.roi.points.length >= 3) {
+            roiText = `Polygon (${tool.roi.points.length} points)`;
+        } else {
+            roiText = `Rect (${tool.roi.x}, ${tool.roi.y}) ${tool.roi.width}x${tool.roi.height}`;
+        }
+    }
+    document.getElementById('toolRoiText').textContent = roiText;
     document.getElementById('toolModal').classList.add('active');
 }
 

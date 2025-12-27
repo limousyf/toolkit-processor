@@ -205,6 +205,17 @@ class ToolkitInstanceService:
 
         tools_to_use = []
         for tool in template.tools:
+            # Transform polygon points if present
+            transformed_points = None
+            if tool.roi.is_polygon:
+                transformed_points = [
+                    (
+                        max(0, int((p[0] - tl_x) * scale_x)),
+                        max(0, int((p[1] - tl_y) * scale_y))
+                    )
+                    for p in tool.roi.points
+                ]
+
             # Translate ROI origin relative to TL marker, then scale
             new_x = int((tool.roi.x - tl_x) * scale_x)
             new_y = int((tool.roi.y - tl_y) * scale_y)
@@ -216,6 +227,7 @@ class ToolkitInstanceService:
                 y=max(0, new_y),
                 width=new_width,
                 height=new_height,
+                points=transformed_points,
             )
             transformed_tool = ToolDefinition(
                 tool_id=tool.tool_id,

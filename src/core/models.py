@@ -7,11 +7,34 @@ from pydantic import BaseModel, Field
 # ==================== COMMON ====================
 
 class ROI(BaseModel):
-    """Region of Interest defining a tool slot location."""
-    x: int = Field(..., description="X coordinate of top-left corner (pixels)")
-    y: int = Field(..., description="Y coordinate of top-left corner (pixels)")
-    width: int = Field(..., description="Width of ROI (pixels)")
-    height: int = Field(..., description="Height of ROI (pixels)")
+    """Region of Interest defining a tool slot location.
+
+    Supports both rectangle (x, y, width, height) and polygon (points) formats.
+    If points is provided, it takes precedence over rectangle coordinates.
+    """
+    # Rectangle format (legacy, still supported)
+    x: int = Field(0, description="X coordinate of top-left corner (pixels)")
+    y: int = Field(0, description="Y coordinate of top-left corner (pixels)")
+    width: int = Field(0, description="Width of ROI (pixels)")
+    height: int = Field(0, description="Height of ROI (pixels)")
+    # Polygon format (preferred for irregular shapes)
+    points: Optional[list[tuple[int, int]]] = Field(None, description="List of (x, y) polygon vertices")
+
+    @property
+    def is_polygon(self) -> bool:
+        """Check if this ROI uses polygon format."""
+        return self.points is not None and len(self.points) >= 3
+
+    @property
+    def bounding_box(self) -> tuple[int, int, int, int]:
+        """Get bounding box (x, y, width, height) for this ROI."""
+        if self.is_polygon:
+            xs = [p[0] for p in self.points]
+            ys = [p[1] for p in self.points]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            return (min_x, min_y, max_x - min_x, max_y - min_y)
+        return (self.x, self.y, self.width, self.height)
 
 
 class FoamColor(str, Enum):
