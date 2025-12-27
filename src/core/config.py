@@ -25,6 +25,15 @@ class Settings(BaseSettings):
     weight_saturation: float = 0.3
     weight_edges: float = 0.2
 
+    # ArUco Registration (Global Standard)
+    aruco_enabled: bool = True
+    aruco_dictionary: str = "DICT_4X4_50"
+    aruco_marker_ids: list[int] = [0, 1, 2, 3]  # TL, TR, BR, BL
+    aruco_canonical_width: int = 1000
+    aruco_canonical_height: int = 800
+    aruco_min_markers: int = 3  # Minimum markers for homography
+    aruco_debug: bool = False
+
     # API settings
     api_title: str = "Toolkit Processor API"
     api_version: str = "1.0.0"

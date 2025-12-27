@@ -123,6 +123,47 @@ async def check_template_image(template_id: str):
     return {"has_image": template_service.has_image(template_id)}
 
 
+@router.get("/templates/{template_id}/aruco-markers")
+async def detect_template_aruco_markers(template_id: str):
+    """Detect ArUco markers in a template's reference image."""
+    from ..cv.registration import ToolkitRegistration
+    from ..core.config import settings
+
+    image_path = template_service.get_image_path(template_id)
+    if not image_path:
+        raise HTTPException(status_code=404, detail=f"No image found for template '{template_id}'")
+
+    try:
+        image = load_image(str(image_path))
+        registration = ToolkitRegistration(
+            dictionary=settings.aruco_dictionary,
+            marker_ids=settings.aruco_marker_ids,
+            canonical_size=(settings.aruco_canonical_width, settings.aruco_canonical_height),
+        )
+        markers = registration.detect_markers(image)
+
+        return {
+            "detected": markers.count > 0,
+            "count": markers.count,
+            "markers": [
+                {
+                    "id": marker_id,
+                    "center": {"x": center[0], "y": center[1]},
+                    "corners": corners.tolist() if marker_id in markers.corners else None
+                }
+                for marker_id, center in markers.centers.items()
+                for corners in [markers.corners.get(marker_id)]
+            ],
+            "all_found": markers.all_found,
+            "canonical_size": {
+                "width": settings.aruco_canonical_width,
+                "height": settings.aruco_canonical_height
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to detect markers: {e}")
+
+
 # ==================== TOOLKITS ====================
 
 class ToolkitListResponse(BaseModel):

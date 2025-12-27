@@ -50,6 +50,24 @@ class ToolDefinition(BaseModel):
     description: Optional[str] = Field(None, description="Additional tool description")
 
 
+class ArucoMarkerBounds(BaseModel):
+    """ArUco marker positions defining the toolkit content area."""
+    top_left: tuple[float, float] = Field(..., description="Top-left marker center (x, y)")
+    top_right: tuple[float, float] = Field(..., description="Top-right marker center (x, y)")
+    bottom_right: tuple[float, float] = Field(..., description="Bottom-right marker center (x, y)")
+    bottom_left: tuple[float, float] = Field(..., description="Bottom-left marker center (x, y)")
+
+    @property
+    def content_width(self) -> float:
+        """Width of the toolkit content area."""
+        return ((self.top_right[0] - self.top_left[0]) + (self.bottom_right[0] - self.bottom_left[0])) / 2
+
+    @property
+    def content_height(self) -> float:
+        """Height of the toolkit content area."""
+        return ((self.bottom_left[1] - self.top_left[1]) + (self.bottom_right[1] - self.top_right[1])) / 2
+
+
 class ToolkitTemplate(BaseModel):
     """Template defining the layout and tools of a toolkit type."""
     template_id: str = Field(..., description="Unique identifier for this template")
@@ -61,6 +79,9 @@ class ToolkitTemplate(BaseModel):
     tools: list[ToolDefinition] = Field(default_factory=list, description="List of tool definitions")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # ArUco marker bounds (auto-detected from reference image)
+    aruco_bounds: Optional[ArucoMarkerBounds] = Field(None, description="ArUco marker positions in reference image")
 
     # Detection thresholds (optional overrides)
     brightness_threshold: Optional[int] = Field(None, description="Override default brightness threshold")
@@ -113,6 +134,16 @@ class CreateToolkitRequest(BaseModel):
     location: Optional[str] = None
 
 
+# ==================== REGISTRATION ====================
+
+class RegistrationInfo(BaseModel):
+    """Registration metadata for check-in records."""
+    markers_detected: int = Field(..., description="Number of ArUco markers detected")
+    markers_expected: int = Field(4, description="Number of markers expected")
+    homography_applied: bool = Field(..., description="Whether perspective correction was applied")
+    fallback_reason: Optional[str] = Field(None, description="Reason if fallback to raw image was used")
+
+
 # ==================== CHECK-IN ====================
 
 class ToolCheckInResult(BaseModel):
@@ -145,6 +176,7 @@ class CheckInRecord(BaseModel):
     status: ToolkitStatus
     tools: list[ToolCheckInResult] = Field(default_factory=list)
     summary: CheckInSummary
+    registration: Optional[RegistrationInfo] = Field(None, description="ArUco registration info")
     checked_in_by: Optional[str] = Field(None, description="User who performed check-in")
     notes: Optional[str] = None
     thumbnail: Optional[str] = Field(None, description="Base64 data URL of thumbnail image")
@@ -167,6 +199,7 @@ class CheckInResponse(BaseModel):
     status: ToolkitStatus
     tools: list[ToolCheckInResult]
     summary: CheckInSummary
+    registration: Optional[RegistrationInfo] = Field(None, description="ArUco registration info")
     image_annotated: Optional[str] = Field(None, description="Base64 encoded annotated image")
 
 
@@ -207,5 +240,6 @@ class AnalysisResult(BaseModel):
     status: str
     tools: list[ToolAnalysisResult] = Field(default_factory=list)
     summary: AnalysisSummary
+    registration: Optional[RegistrationInfo] = None
     image_annotated: Optional[str] = None
     error: Optional[str] = None

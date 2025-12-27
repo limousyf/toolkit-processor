@@ -20,6 +20,7 @@ from ..core.models import (
     ToolkitConfig,
     ToolDefinition,
     ROI,
+    RegistrationInfo,
 )
 from .template_service import template_service
 from ..cv.processor import ToolkitProcessor
@@ -150,34 +151,88 @@ class ToolkitInstanceService:
         if not template:
             raise ValueError(f"Template '{toolkit.template_id}' not found")
 
-        # Get check-in image dimensions (OpenCV: height, width, channels)
-        img_height, img_width = image.shape[:2]
-
-        # Scale ROIs if template has stored dimensions and they differ from check-in image
+        # Determine ROI transformation based on template's ArUco bounds
         tools_to_use = template.tools
-        if template.image_width and template.image_height:
-            scale_x = img_width / template.image_width
-            scale_y = img_height / template.image_height
 
-            # Only scale if dimensions differ significantly (more than 1% difference)
-            if abs(scale_x - 1.0) > 0.01 or abs(scale_y - 1.0) > 0.01:
-                scaled_tools = []
-                for tool in template.tools:
-                    scaled_roi = ROI(
-                        x=int(tool.roi.x * scale_x),
-                        y=int(tool.roi.y * scale_y),
-                        width=int(tool.roi.width * scale_x),
-                        height=int(tool.roi.height * scale_y),
-                    )
-                    scaled_tool = ToolDefinition(
-                        tool_id=tool.tool_id,
-                        name=tool.name,
-                        slot_index=tool.slot_index,
-                        roi=scaled_roi,
-                        description=tool.description,
-                    )
-                    scaled_tools.append(scaled_tool)
-                tools_to_use = scaled_tools
+        if template.aruco_bounds:
+            # Template has ArUco markers - transform ROIs to canonical space
+            # Canonical size = content area dimensions (preserves aspect ratio)
+            bounds = template.aruco_bounds
+            content_width = bounds.content_width
+            content_height = bounds.content_height
+
+            # Use content area dimensions as canonical size (rounded to int)
+            canonical_width = int(content_width)
+            canonical_height = int(content_height)
+
+            # Update processor's registration with template-specific canonical size
+            from ..cv.registration import ToolkitRegistration
+            from ..core.config import settings
+
+            self.processor.registration = ToolkitRegistration(
+                dictionary=settings.aruco_dictionary,
+                marker_ids=settings.aruco_marker_ids,
+                canonical_size=(canonical_width, canonical_height),
+                min_markers_for_homography=settings.aruco_min_markers,
+            )
+
+            # Transform ROIs from template image space to canonical space
+            # ROIs are offset by template's TL marker position and scaled
+            tl_x, tl_y = bounds.top_left
+            scale_x = canonical_width / content_width
+            scale_y = canonical_height / content_height
+
+            transformed_tools = []
+            for tool in template.tools:
+                # Translate ROI origin relative to TL marker, then scale
+                new_x = int((tool.roi.x - tl_x) * scale_x)
+                new_y = int((tool.roi.y - tl_y) * scale_y)
+                new_width = int(tool.roi.width * scale_x)
+                new_height = int(tool.roi.height * scale_y)
+
+                transformed_roi = ROI(
+                    x=max(0, new_x),
+                    y=max(0, new_y),
+                    width=new_width,
+                    height=new_height,
+                )
+                transformed_tool = ToolDefinition(
+                    tool_id=tool.tool_id,
+                    name=tool.name,
+                    slot_index=tool.slot_index,
+                    roi=transformed_roi,
+                    description=tool.description,
+                )
+                transformed_tools.append(transformed_tool)
+            tools_to_use = transformed_tools
+
+        else:
+            # No ArUco bounds - use legacy scaling based on image dimensions
+            img_height, img_width = image.shape[:2]
+
+            if template.image_width and template.image_height:
+                scale_x = img_width / template.image_width
+                scale_y = img_height / template.image_height
+
+                # Only scale if dimensions differ significantly (more than 1% difference)
+                if abs(scale_x - 1.0) > 0.01 or abs(scale_y - 1.0) > 0.01:
+                    scaled_tools = []
+                    for tool in template.tools:
+                        scaled_roi = ROI(
+                            x=int(tool.roi.x * scale_x),
+                            y=int(tool.roi.y * scale_y),
+                            width=int(tool.roi.width * scale_x),
+                            height=int(tool.roi.height * scale_y),
+                        )
+                        scaled_tool = ToolDefinition(
+                            tool_id=tool.tool_id,
+                            name=tool.name,
+                            slot_index=tool.slot_index,
+                            roi=scaled_roi,
+                            description=tool.description,
+                        )
+                        scaled_tools.append(scaled_tool)
+                    tools_to_use = scaled_tools
 
         # Convert template to legacy ToolkitConfig for CV processing
         toolkit_config = ToolkitConfig(
@@ -260,6 +315,7 @@ class ToolkitInstanceService:
             status=new_status,
             tools=tool_results,
             summary=summary,
+            registration=analysis.registration,
             checked_in_by=checked_in_by,
             notes=notes,
             thumbnail=thumbnail,
@@ -275,6 +331,7 @@ class ToolkitInstanceService:
             status=new_status,
             tools=tool_results,
             summary=summary,
+            registration=analysis.registration,
             image_annotated=analysis.image_annotated,
         )
 

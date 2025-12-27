@@ -21,7 +21,9 @@ let templateState = {
     drawStart: null,
     currentRect: null,
     editingIndex: -1,
-    editingTemplateId: null  // null = creating, string = editing
+    editingTemplateId: null,  // null = creating, string = editing
+    arucoMarkers: null,  // ArUco marker detection results
+    showAruco: true  // Whether to display ArUco markers
 };
 
 // ==================== INITIALIZATION ====================
@@ -168,7 +170,7 @@ function openTemplateEditor() {
         image: null, imageWidth: 0, imageHeight: 0, zoom: 1,
         tools: [], selectedIndex: -1, isDrawing: false,
         drawStart: null, currentRect: null, editingIndex: -1,
-        editingTemplateId: null
+        editingTemplateId: null, arucoMarkers: null, showAruco: true
     };
 
     document.getElementById('templateEditorTitle').textContent = 'Create Template';
@@ -183,6 +185,7 @@ function openTemplateEditor() {
     document.getElementById('templateImageInput').value = '';
 
     renderTemplateTools();
+    updateArucoButtonState();  // Hide ArUco button for new templates
 
     // Show full-screen editor
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -210,7 +213,7 @@ async function editTemplate(templateId) {
             })),
             selectedIndex: -1, isDrawing: false,
             drawStart: null, currentRect: null, editingIndex: -1,
-            editingTemplateId: templateId
+            editingTemplateId: templateId, arucoMarkers: null, showAruco: true
         };
 
         document.getElementById('templateEditorTitle').textContent = 'Edit Template';
@@ -226,7 +229,7 @@ async function editTemplate(templateId) {
         if (has_image) {
             // Load the saved image
             const img = new Image();
-            img.onload = () => {
+            img.onload = async () => {
                 templateState.image = img;
                 templateState.imageWidth = img.width;
                 templateState.imageHeight = img.height;
@@ -236,7 +239,18 @@ async function editTemplate(templateId) {
                 document.getElementById('canvasControls').style.display = 'flex';
                 document.getElementById('templateImageInput').style.display = 'none';
 
+                // Fetch ArUco markers
+                try {
+                    const arucoRes = await fetch(`/api/templates/${templateId}/aruco-markers`);
+                    if (arucoRes.ok) {
+                        templateState.arucoMarkers = await arucoRes.json();
+                    }
+                } catch (e) {
+                    console.warn('Could not fetch ArUco markers:', e);
+                }
+
                 fitTemplate();
+                updateArucoButtonState();
             };
             img.src = `/api/templates/${templateId}/image?t=${Date.now()}`;  // Cache bust
         } else {
@@ -286,6 +300,7 @@ function handleTemplateImage(e) {
     if (!file) return;
 
     templateState.imageFile = file;  // Save the file for upload
+    templateState.arucoMarkers = null;  // Clear ArUco markers until image is saved
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -301,6 +316,7 @@ function handleTemplateImage(e) {
             document.getElementById('templateImageInput').style.display = 'none';
 
             fitTemplate();
+            updateArucoButtonState();  // Hide button until markers are detected
         };
         img.src = event.target.result;
     };
@@ -321,6 +337,26 @@ function zoomTemplate(delta) {
     templateState.zoom = Math.max(0.1, Math.min(3, templateState.zoom + delta));
     document.getElementById('templateZoomLevel').textContent = `${Math.round(templateState.zoom * 100)}%`;
     redrawTemplateCanvas();
+}
+
+function toggleArucoDisplay() {
+    templateState.showAruco = !templateState.showAruco;
+    const btn = document.getElementById('toggleArucoBtn');
+    if (btn) {
+        btn.textContent = `ArUco: ${templateState.showAruco ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('btn-secondary', !templateState.showAruco);
+    }
+    redrawTemplateCanvas();
+}
+
+function updateArucoButtonState() {
+    const btn = document.getElementById('toggleArucoBtn');
+    if (btn) {
+        const hasMarkers = templateState.arucoMarkers && templateState.arucoMarkers.markers && templateState.arucoMarkers.markers.length > 0;
+        btn.style.display = hasMarkers ? 'inline-block' : 'none';
+        btn.textContent = `ArUco: ${templateState.showAruco ? 'ON' : 'OFF'}`;
+        btn.classList.toggle('btn-secondary', !templateState.showAruco);
+    }
 }
 
 function redrawTemplateCanvas() {
@@ -360,6 +396,67 @@ function redrawTemplateCanvas() {
             ctx.fillText(label, tool.roi.x * z + 4, tool.roi.y * z - 4 * z);
         }
     });
+
+    // Draw ArUco markers if detected
+    if (templateState.showAruco && templateState.arucoMarkers && templateState.arucoMarkers.markers) {
+        const markerLabels = ['TL (0)', 'TR (1)', 'BR (2)', 'BL (3)'];
+        const markerColors = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b'];
+
+        templateState.arucoMarkers.markers.forEach(marker => {
+            const color = markerColors[marker.id] || '#888';
+            const label = markerLabels[marker.id] || `ID:${marker.id}`;
+
+            // Draw marker corners as polygon
+            if (marker.corners && marker.corners.length === 4) {
+                ctx.beginPath();
+                ctx.moveTo(marker.corners[0][0] * z, marker.corners[0][1] * z);
+                for (let i = 1; i < 4; i++) {
+                    ctx.lineTo(marker.corners[i][0] * z, marker.corners[i][1] * z);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.fillStyle = color + '33';  // 20% opacity
+                ctx.fill();
+            }
+
+            // Draw center point
+            ctx.beginPath();
+            ctx.arc(marker.center.x * z, marker.center.y * z, 8, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw label
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillStyle = '#fff';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.strokeText(label, marker.center.x * z + 12, marker.center.y * z + 5);
+            ctx.fillText(label, marker.center.x * z + 12, marker.center.y * z + 5);
+        });
+
+        // Draw toolkit boundary (line connecting marker centers)
+        if (templateState.arucoMarkers.all_found) {
+            const centers = {};
+            templateState.arucoMarkers.markers.forEach(m => centers[m.id] = m.center);
+
+            ctx.beginPath();
+            ctx.moveTo(centers[0].x * z, centers[0].y * z);
+            ctx.lineTo(centers[1].x * z, centers[1].y * z);
+            ctx.lineTo(centers[2].x * z, centers[2].y * z);
+            ctx.lineTo(centers[3].x * z, centers[3].y * z);
+            ctx.closePath();
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
 
     // Draw current rect
     if (templateState.currentRect) {

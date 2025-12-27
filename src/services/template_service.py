@@ -4,8 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import cv2
+import numpy as np
+
 from ..core.config import settings
-from ..core.models import ToolkitTemplate, CreateTemplateRequest, ToolDefinition
+from ..core.models import ToolkitTemplate, CreateTemplateRequest, ToolDefinition, ArucoMarkerBounds
 
 
 class TemplateService:
@@ -80,6 +83,12 @@ class TemplateService:
         if not config_path.exists():
             raise ValueError(f"Template '{template.template_id}' not found")
 
+        # Preserve aruco_bounds from existing template if not provided
+        if template.aruco_bounds is None:
+            existing = self.get_template(template.template_id)
+            if existing and existing.aruco_bounds:
+                template.aruco_bounds = existing.aruco_bounds
+
         # Ensure slot_index values are consistent
         tools = []
         for i, tool in enumerate(template.tools):
@@ -115,11 +124,53 @@ class TemplateService:
         return config_path
 
     def save_image(self, template_id: str, image_data: bytes) -> Path:
-        """Save template reference image."""
+        """Save template reference image and detect ArUco markers."""
         image_path = self._get_image_path(template_id)
         with open(image_path, "wb") as f:
             f.write(image_data)
+
+        # Try to detect ArUco markers and update template
+        self._detect_and_save_aruco_bounds(template_id, image_path)
+
         return image_path
+
+    def _detect_and_save_aruco_bounds(self, template_id: str, image_path: Path) -> None:
+        """Detect ArUco markers in image and save bounds to template."""
+        try:
+            from ..cv.registration import ToolkitRegistration
+
+            # Load image
+            image = cv2.imread(str(image_path))
+            if image is None:
+                return
+
+            # Detect markers
+            registration = ToolkitRegistration(
+                dictionary=settings.aruco_dictionary,
+                marker_ids=settings.aruco_marker_ids,
+            )
+            markers = registration.detect_markers(image)
+
+            # If all 4 markers found, save bounds
+            if markers.all_found:
+                bounds = ArucoMarkerBounds(
+                    top_left=(markers.centers[0][0], markers.centers[0][1]),
+                    top_right=(markers.centers[1][0], markers.centers[1][1]),
+                    bottom_right=(markers.centers[2][0], markers.centers[2][1]),
+                    bottom_left=(markers.centers[3][0], markers.centers[3][1]),
+                )
+
+                # Update template with bounds
+                template = self.get_template(template_id)
+                if template:
+                    template.aruco_bounds = bounds
+                    template.image_width = image.shape[1]
+                    template.image_height = image.shape[0]
+                    self._save_template(template)
+
+        except Exception as e:
+            # Don't fail image save if ArUco detection fails
+            print(f"Warning: Could not detect ArUco markers: {e}")
 
     def save_image_base64(self, template_id: str, base64_data: str) -> Path:
         """Save template reference image from base64 string."""

@@ -2,6 +2,7 @@ from typing import Optional
 
 import numpy as np
 
+from ..core.config import settings
 from ..core.models import (
     ToolkitConfig,
     ToolAnalysisResult,
@@ -9,9 +10,11 @@ from ..core.models import (
     AnalysisSummary,
     ToolStatus,
     ROI,
+    RegistrationInfo,
 )
 from ..utils.image_utils import encode_image_base64
 from .detection import ToolDetector
+from .registration import ToolkitRegistration, RegistrationResult
 from .visualization import ResultVisualizer
 
 
@@ -22,15 +25,30 @@ class ToolkitProcessor:
         self,
         detector: Optional[ToolDetector] = None,
         visualizer: Optional[ResultVisualizer] = None,
+        registration: Optional[ToolkitRegistration] = None,
     ):
         """Initialize the processor.
 
         Args:
             detector: Tool detector instance (creates default if None)
             visualizer: Result visualizer instance (creates default if None)
+            registration: Registration instance for ArUco marker detection (creates default if None)
         """
         self.detector = detector or ToolDetector()
         self.visualizer = visualizer or ResultVisualizer()
+
+        # Initialize registration with global settings
+        if registration is not None:
+            self.registration = registration
+        elif settings.aruco_enabled:
+            self.registration = ToolkitRegistration(
+                dictionary=settings.aruco_dictionary,
+                marker_ids=settings.aruco_marker_ids,
+                canonical_size=(settings.aruco_canonical_width, settings.aruco_canonical_height),
+                min_markers_for_homography=settings.aruco_min_markers,
+            )
+        else:
+            self.registration = None
 
     def analyze(
         self,
@@ -50,7 +68,22 @@ class ToolkitProcessor:
         Returns:
             AnalysisResult with tool statuses and summary
         """
-        # Create detector with toolkit-specific thresholds if provided
+        # Step 1: Registration (ArUco marker detection and perspective correction)
+        registration_info: Optional[RegistrationInfo] = None
+        reg_result: Optional[RegistrationResult] = None
+        working_image = image
+
+        if self.registration is not None:
+            reg_result = self.registration.register(image)
+            working_image = reg_result.warped_image if reg_result.warped_image is not None else image
+            registration_info = RegistrationInfo(
+                markers_detected=reg_result.markers_detected,
+                markers_expected=4,
+                homography_applied=reg_result.success,
+                fallback_reason=reg_result.fallback_reason,
+            )
+
+        # Step 2: Create detector with toolkit-specific thresholds if provided
         detector = ToolDetector(
             brightness_threshold=toolkit_config.brightness_threshold,
             occupied_ratio_threshold=toolkit_config.occupied_ratio_threshold,
@@ -59,9 +92,9 @@ class ToolkitProcessor:
         tool_results: list[ToolAnalysisResult] = []
         rois: list[ROI] = []
 
-        # Process each tool slot
+        # Step 3: Process each tool slot
         for tool in toolkit_config.tools:
-            detection = detector.detect(image, tool.roi)
+            detection = detector.detect(working_image, tool.roi)
 
             debug_info = None
             if include_debug_info:
@@ -107,7 +140,7 @@ class ToolkitProcessor:
         annotated_image_b64 = None
         if include_annotated_image:
             annotated = self.visualizer.annotate_image(
-                image, tool_results, rois,
+                working_image, tool_results, rois,
                 show_labels=True,
                 show_confidence=True,
                 show_icons=True,
@@ -115,6 +148,13 @@ class ToolkitProcessor:
             annotated = self.visualizer.create_summary_overlay(
                 annotated, present, missing, uncertain
             )
+
+            # Draw registration debug info if enabled
+            if settings.aruco_debug and reg_result is not None:
+                annotated = self.registration.draw_detected_markers(
+                    annotated, reg_result.detected_markers
+                )
+
             annotated_image_b64 = encode_image_base64(annotated)
 
         return AnalysisResult(
@@ -123,6 +163,7 @@ class ToolkitProcessor:
             status=status,
             tools=tool_results,
             summary=summary,
+            registration=registration_info,
             image_annotated=annotated_image_b64,
         )
 
